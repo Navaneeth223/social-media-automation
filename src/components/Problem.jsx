@@ -70,20 +70,6 @@ export default function Problem() {
         { yPercent: 0, duration: 0.6, stagger: 0.5, ease: EASE_INOUT }
       );
 
-      // The 300-frame UI video scrubs 1:1 with the pin — the background IS the scroll.
-      const frame = { i: 0 };
-      tl.to(
-        frame,
-        {
-          i: FRAME_COUNT - 1,
-          ease: "none",
-          onUpdate: () => seqRef.current?.draw(Math.round(frame.i)),
-        },
-        0
-      );
-      // Cinematic settle on the background plate while the copy builds.
-      tl.fromTo("[data-canvas-wrap]", { scale: 1.07 }, { scale: 1, ease: "none" }, 0);
-
       // Chore pile flies in with the first two lines.
       tl.from(
         chips,
@@ -123,6 +109,28 @@ export default function Problem() {
       );
 
       tl.from(noteRef.current, { y: 30, opacity: 0, duration: 0.35, ease: EASE_INOUT }, ">-0.15");
+
+      // The 300-frame UI video scrubs across the WHOLE pin — the background is
+      // the scroll. Appended last so both tweens can span the final tl length.
+      const span = tl.duration();
+      const frame = { i: 0 };
+      tl.to(
+        frame,
+        {
+          i: FRAME_COUNT - 1,
+          duration: span,
+          ease: "none",
+          onUpdate: () => seqRef.current?.draw(Math.round(frame.i)),
+        },
+        0
+      );
+      // Cinematic settle on the background plate.
+      tl.fromTo(
+        "[data-canvas-wrap]",
+        { scale: 1.07 },
+        { scale: 1, duration: span, ease: "none" },
+        0
+      );
     }, scope);
     return () => ctx.revert();
   });

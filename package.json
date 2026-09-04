@@ -9,7 +9,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "dev:server": "npm --prefix server run dev",
-    "smoke:server": "npm --prefix server run smoke"
+    "smoke:server": "npm --prefix server run smoke",
+    "db:up": "node server/scripts/local-db.mjs up",
+    "db:down": "node server/scripts/local-db.mjs down",
+    "seed": "node server/scripts/seed.mjs",
+    "up": "npm run db:up && npm run seed && concurrently -n web,api -c cyan,yellow \"npm run dev\" \"npm run dev:server\""
   },
   "dependencies": {
     "gsap": "^3.15.0",
@@ -21,6 +25,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.1.0",
     "tailwindcss": "^4.3.3",
     "vite": "^7.3.0"
   }

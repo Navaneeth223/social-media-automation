@@ -4,3 +4,5 @@ dist
 *.local
 .DS_Store
 /ul cards/
+server/.local-db/
+server/.local-db.log

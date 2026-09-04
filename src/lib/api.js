@@ -3,12 +3,19 @@ const BASE = import.meta.env.VITE_API_URL || "";
 /* Thin fetch wrapper: JSON in/out, cookies always sent (httpOnly JWT session),
    API errors thrown as Error with the server's message. */
 async function api(path, { method = "GET", body } = {}) {
-  const res = await fetch(BASE + path, {
-    method,
-    credentials: "include",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(BASE + path, {
+      method,
+      credentials: "include",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error(
+      "Can't reach the Pulse API — start it with `npm run up` (repo root) or `npm run dev` inside server/."
+    );
+  }
   let data = null;
   try {
     data = await res.json();

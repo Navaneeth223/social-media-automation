@@ -142,3 +142,20 @@ Section 01 scrubs a 300-frame canvas sequence of the product UI behind the copy,
 - **Renderer:** `src/components/ProblemSequence.jsx` — paints to `<canvas>` (device-pixel-ratio capped at 1.5), preloads during browser idle time after the hero, and always draws the *nearest loaded* frame so scrubbing never stalls on the network.
 - **Fallbacks:** one static mid-video frame on mobile and under `prefers-reduced-motion`; the section is fully readable even with zero frames loaded (ink background).
 
+---
+
+## Local demo mode — everything on this computer (no cloud, no cost)
+
+```bash
+npm install    # once (adds concurrently)
+npm run up     # local MongoDB → seed demo account → web + API together
+```
+
+Then open http://localhost:5173, click any "Start free", or go straight to the login page.
+
+- **Demo login:** `demo@pulse.app` / `demo12345` — the login page also has a "Fill demo login" button. `npm run seed` resets it any time.
+- **MongoDB without installing anything:** `server/scripts/local-db.mjs` reuses the mongod binary the smoke test already downloaded and runs it against a real on-disk data dir (`server/.local-db`, gitignored) — **data persists across restarts**. Managed by `npm run db:up` / `db:down` / `seed`.
+- **`server/.env`** (gitignored) holds a generated `JWT_SECRET` and the local `MONGODB_URI` — the API refuses to boot without it by design.
+- **Why signup may appear broken:** the API isn't running. The frontend now says so explicitly ("Can't reach the Pulse API — start it with `npm run up`…") instead of a cryptic network error.
+- **Moving to the cloud later:** zero code changes — point `MONGODB_URI` at a free Atlas M0, deploy the API to Render/Railway, set `CLIENT_ORIGIN` to your Vercel URL. Cookies flip to `sameSite=none; secure` automatically in production.
+

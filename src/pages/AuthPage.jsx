@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Zap } from "lucide-react";
 import { login, register } from "../lib/api";
 import { PRODUCT } from "../lib/config";
 
@@ -134,6 +134,17 @@ export default function AuthPage({ mode }) {
                 {!busy && <ArrowRight size={15} />}
               </button>
             </form>
+
+            {!isSignup && (
+              <button
+                type="button"
+                onClick={() => setForm({ name: "", email: "demo@pulse.app", password: "demo12345" })}
+                className="mt-4 flex w-max items-center gap-2 text-xs text-mute transition-colors hover:text-acid"
+              >
+                <Zap size={12} className="text-acid" />
+                Fill demo login — demo@pulse.app / demo12345
+              </button>
+            )}
 
             <p className="mt-6 text-sm text-mute">
               {isSignup ? (

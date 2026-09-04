@@ -13,6 +13,8 @@ import {
   Send,
 } from "lucide-react";
 import SectionLabel from "./SectionLabel";
+import ProblemSequence from "./ProblemSequence";
+import { FRAME_COUNT } from "../lib/frames";
 import { useGsapAnim, EASE_INOUT } from "../lib/motion";
 
 const LINES = [
@@ -43,6 +45,7 @@ export default function Problem() {
   const ref = useRef(null);
   const noteRef = useRef(null);
   const countRef = useRef(null);
+  const seqRef = useRef(null);
 
   useGsapAnim(ref, ({ desktop, reduce, scope }) => {
     if (reduce || !desktop) return;
@@ -66,6 +69,20 @@ export default function Problem() {
         { yPercent: 115 },
         { yPercent: 0, duration: 0.6, stagger: 0.5, ease: EASE_INOUT }
       );
+
+      // The 300-frame UI video scrubs 1:1 with the pin — the background IS the scroll.
+      const frame = { i: 0 };
+      tl.to(
+        frame,
+        {
+          i: FRAME_COUNT - 1,
+          ease: "none",
+          onUpdate: () => seqRef.current?.draw(Math.round(frame.i)),
+        },
+        0
+      );
+      // Cinematic settle on the background plate while the copy builds.
+      tl.fromTo("[data-canvas-wrap]", { scale: 1.07 }, { scale: 1, ease: "none" }, 0);
 
       // Chore pile flies in with the first two lines.
       tl.from(
@@ -115,6 +132,12 @@ export default function Problem() {
       ref={ref}
       className="relative flex min-h-[100svh] flex-col justify-center overflow-hidden px-5 py-24 md:px-10"
     >
+      <div data-canvas-wrap className="absolute inset-0 will-change-transform" aria-hidden="true">
+        <ProblemSequence ref={seqRef} />
+        {/* Functional scrim — keeps the type readable over the video plate */}
+        <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/75 to-ink/35" />
+      </div>
+
       <div className="relative z-10">
         <SectionLabel index="01" label="The problem" />
         <div className="mt-10 md:mt-14">

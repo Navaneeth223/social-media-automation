@@ -130,3 +130,15 @@ npm run dev        # http://localhost:5173 — /api proxies to :8787 in dev
 
 Phase 2 — LinkedIn OAuth (`passport-linkedin-oauth2`), encrypted token storage, post composer, BullMQ + Redis scheduling, real publish to your own profile. Say "Build Phase 2" to proceed.
 
+---
+
+## Problem-section background — the 300-frame UI video
+
+Section 01 scrubs a 300-frame canvas sequence of the product UI behind the copy, Apple-style: frames map 1:1 to the pinned scroll range, with a slow scale settle and a left-weighted scrim keeping the type readable.
+
+- **Source:** the `ul cards/` folder (300 × `ezgif-frame-NNN.jpg`, 1280×720, ~5 MB) — kept out of git via `.gitignore`.
+- **Shipped frames:** `public/problem-frames/0001.jpg … 0300.jpg` (renamed copy, served statically).
+- **Count + URL pattern:** one constant in `src/lib/frames.js` (`FRAME_COUNT`, `frameSrc`) — swap the video by replacing the folder and updating that constant.
+- **Renderer:** `src/components/ProblemSequence.jsx` — paints to `<canvas>` (device-pixel-ratio capped at 1.5), preloads during browser idle time after the hero, and always draws the *nearest loaded* frame so scrubbing never stalls on the network.
+- **Fallbacks:** one static mid-video frame on mobile and under `prefers-reduced-motion`; the section is fully readable even with zero frames loaded (ink background).
+

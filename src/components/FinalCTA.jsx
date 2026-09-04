@@ -1,9 +1,11 @@
 import { useRef } from "react";
 import gsap from "gsap";
 import { ArrowRight } from "lucide-react";
-import { useGsapAnim, EASE_OUT, STAGGER, scrollToId } from "../lib/motion";
+import { useNavigate } from "react-router-dom";
+import { useGsapAnim, EASE_OUT, STAGGER } from "../lib/motion";
 
 export default function FinalCTA() {
+  const navigate = useNavigate();
   const ref = useRef(null);
 
   useGsapAnim(ref, ({ reduce, scope }) => {
@@ -35,7 +37,7 @@ export default function FinalCTA() {
         </h2>
         <div data-cta-reveal className="mt-10 flex flex-wrap items-center gap-6">
           <button
-            onClick={() => scrollToId("pricing")}
+            onClick={() => navigate("/signup")}
             className="group flex items-center gap-2 rounded-full bg-ink px-7 py-4 text-sm font-semibold text-paper"
           >
             Start posting on autopilot

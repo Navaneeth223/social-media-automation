@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import gsap from "gsap";
 import { SplitText } from "gsap/SplitText";
+import { useNavigate } from "react-router-dom";
 import { ArrowDown } from "lucide-react";
 import DashboardMock from "./mocks/DashboardMock";
 import Marquee from "./Marquee";
@@ -8,6 +9,7 @@ import { useGsapAnim, EASE_OUT, STAGGER, scrollToId } from "../lib/motion";
 import { PRODUCT } from "../lib/config";
 
 export default function Hero() {
+  const navigate = useNavigate();
   const sectionRef = useRef(null);
   const headRef = useRef(null);
   const mockWrapRef = useRef(null);
@@ -95,7 +97,7 @@ export default function Hero() {
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-5">
               <button
-                onClick={() => scrollToId("pricing")}
+                onClick={() => navigate("/signup")}
                 className="rounded-full bg-acid px-6 py-3.5 text-sm font-semibold text-ink transition-transform duration-300 hover:-translate-y-0.5"
               >
                 Start posting free

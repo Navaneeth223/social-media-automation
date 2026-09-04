@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ArrowUpRight, Menu, X } from "lucide-react";
 import { PRODUCT } from "../lib/config";
 import { scrollToId } from "../lib/motion";
@@ -12,6 +13,7 @@ const LINKS = [
 
 export default function Nav() {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const go = (id) => {
     setOpen(false);
     scrollToId(id);
@@ -32,7 +34,7 @@ export default function Nav() {
             </button>
           ))}
           <button
-            onClick={() => go("pricing")}
+            onClick={() => navigate("/signup")}
             className="mt-8 w-max rounded-full bg-acid px-6 py-3 text-sm font-semibold text-ink"
           >
             Start free
@@ -62,7 +64,7 @@ export default function Nav() {
               </button>
             ))}
             <button
-              onClick={() => go("pricing")}
+              onClick={() => navigate("/signup")}
               className="group flex items-center gap-1.5 rounded-full border border-paper/30 px-4 py-2 text-[13px] font-semibold text-paper transition-colors hover:bg-paper hover:text-black"
             >
               Start free

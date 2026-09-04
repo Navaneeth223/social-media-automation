@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import gsap from "gsap";
 import { Check } from "lucide-react";
 import SectionLabel from "./SectionLabel";
@@ -33,6 +34,7 @@ const TIERS = [
 ];
 
 export default function Pricing() {
+  const navigate = useNavigate();
   const [yearly, setYearly] = useState(false);
   const priceRefs = useRef([]);
 
@@ -124,6 +126,7 @@ export default function Pricing() {
                 ))}
               </ul>
               <button
+                onClick={() => navigate(`/signup?plan=${t.name.toLowerCase()}`)}
                 className={`mt-9 rounded-full py-3 text-sm font-semibold transition-transform duration-300 hover:-translate-y-0.5 ${
                   t.featured ? "bg-ink text-paper" : "border border-line bg-soot hover:border-acid/60"
                 }`}

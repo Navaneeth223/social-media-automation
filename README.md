@@ -93,3 +93,40 @@ Pre-animation states are applied in CSS **only** under `@media (min-width: 768px
 - **One motion system:** two named CustomEases + `"none"` for scroll-driven positions; stagger values are constants, not vibes.
 - **Reduced motion / no-JS:** every GSAP branch early-returns on `reduce`; CSS pre-states only apply where animation will run; the marquee, toggle, and hover transitions all collapse to static states. The page is fully readable with animations disabled.
 
+---
+
+## Phase 1 — real accounts + real auth (LIVE)
+
+The site is no longer just marketing. `server/` is a real Express API: MongoDB (Atlas M0 or local), JWT sessions in httpOnly cookies, bcrypt-hashed passwords, rate-limited credential routes, and a real dashboard at `/app` fed by `GET /api/auth/me`.
+
+### Run both halves
+
+```bash
+# API — first run: copy server/.env.example → server/.env, set JWT_SECRET (+ MONGODB_URI for Atlas)
+cd server
+npm install
+npm run smoke      # boots a real in-memory Mongo and exercises the whole auth flow
+npm run dev        # http://localhost:8787
+
+# Web (second terminal)
+npm install        # react-router-dom was added
+npm run dev        # http://localhost:5173 — /api proxies to :8787 in dev
+```
+
+### What's real now
+
+- `/signup` + `/login` create and verify **real user records** (bcrypt 12 rounds, zod validation, 409 on duplicates, generic 401s that never reveal which field was wrong).
+- Every "Start free" CTA on the landing page routes to the real signup; pricing tiers pass their plan through the URL.
+- `/app` reads your actual account: plan, trial days left, sign-out — plus a connection matrix that only promises what each platform's free tier can do (X is labeled "No API" honestly; nothing is a dead click).
+- `server/smoke.js` is the phase gate: 10 end-to-end checks against the real Express app (register → session → me → logout, hashing, 401/409 paths).
+
+### Honesty rules baked in
+
+- Passwords: bcrypt, never stored or returned in any response.
+- Sessions: signed JWT in an httpOnly cookie (`sameSite=lax` dev, `none`+`secure` prod behind a proxy).
+- Platform tokens (from Phase 2 on) will be encrypted at rest with a server-side key before they ever touch the database — never plaintext.
+
+### Next
+
+Phase 2 — LinkedIn OAuth (`passport-linkedin-oauth2`), encrypted token storage, post composer, BullMQ + Redis scheduling, real publish to your own profile. Say "Build Phase 2" to proceed.
+

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { useSEO } from "../lib/seo";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ScrollSmoother } from "gsap/ScrollSmoother";
@@ -15,6 +16,20 @@ import Footer from "../components/Footer";
 
 /* The marketing site — scroll-smoothed, pinned, fully animated. Lives at "/". */
 export default function Landing() {
+  useSEO({
+    title: "Pulse — AI-Powered Social Media Automation",
+    description:
+      "Draft once, post everywhere. Pulse schedules and publishes to 7 social platforms with AI captions and best-time-to-post prediction.",
+    path: "/",
+  });
+
+  // Deep links like /#pricing land on the SPA after mount — scroll to the target.
+  useEffect(() => {
+    if (window.location.hash.length > 1) {
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+    }
+  }, []);
+
   const barRef = useRef(null);
 
   useLayoutEffect(() => {

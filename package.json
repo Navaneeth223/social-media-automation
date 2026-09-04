@@ -6,7 +6,7 @@
   "description": "Pulse — premium landing page for a social media automation SaaS. React 18 + Vite + GSAP + Tailwind v4.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-seo.mjs",
     "preview": "vite preview",
     "dev:server": "npm --prefix server run dev",
     "smoke:server": "npm --prefix server run smoke",

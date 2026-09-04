@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useSEO } from "../lib/seo";
 import { ArrowLeft, ArrowRight, Zap } from "lucide-react";
 import { login, register } from "../lib/api";
 import { PRODUCT } from "../lib/config";
@@ -9,6 +10,16 @@ const PLANS = { starter: "Starter", growth: "Growth", agency: "Agency" };
 export default function AuthPage({ mode }) {
   const isSignup = mode === "signup";
   const navigate = useNavigate();
+
+  useSEO({
+    title: isSignup ? "Start your free trial — Pulse" : "Log in — Pulse",
+    description: isSignup
+      ? "Create your Pulse account — schedule and publish to 7 social platforms. 14-day trial, no credit card."
+      : "Log in to your Pulse workspace to schedule and publish across 7 social platforms.",
+    path: isSignup ? "/signup" : "/login",
+    noindex: true,
+  });
+
   const [params] = useSearchParams();
   const plan = PLANS[params.get("plan")?.toLowerCase()] || null;
 

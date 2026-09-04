@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
+import { useSEO } from "../lib/seo";
 import {
   AtSign,
   CalendarDays,
@@ -30,6 +31,13 @@ const CONNECTIONS = [
 ];
 
 export default function Dashboard() {
+  useSEO({
+    title: "Pulse — Dashboard",
+    description: "Your private Pulse workspace.",
+    path: "/app",
+    noindex: true,
+  });
+
   const [user, setUser] = useState(undefined); // undefined = loading, null = signed out
   const navigate = useNavigate();
 

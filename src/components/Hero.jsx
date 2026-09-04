@@ -77,7 +77,7 @@ export default function Hero() {
           className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.3em] text-mute"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-acid" aria-hidden="true" />
-          Social automation · 7 platforms · one queue
+          AI-powered social media automation · 7 platforms · one queue
         </p>
 
         <h1

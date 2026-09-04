@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0a0b09;
+  --color-coal: #12140e;
+  --color-soot: #1a1d13;
+  --color-line: #262a1c;
+  --color-paper: #f2f3ec;
+  --color-mute: #8f9484;
+  --color-acid: #d7ff3c;
+
+  --font-display: "Clash Display", "Archivo", ui-sans-serif, sans-serif;
+  --font-body: "General Sans", "Archivo", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    scrollbar-color: var(--color-line) var(--color-ink);
+  }
+  body {
+    @apply bg-ink text-paper font-body antialiased;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-acid);
+    color: var(--color-ink);
+  }
+}
+
+/* ————— craft utilities ————— */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility text-stroke {
+  color: transparent;
+  -webkit-text-stroke: 1.5px color-mix(in srgb, var(--color-paper) 55%, transparent);
+}
+
+/* Layout-only chip; pass colors at the call site. */
+@utility chip {
+  @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium tracking-wide;
+}
+
+/* ————— platform marquee: transform-only, seamless loop ————— */
+.marquee-track {
+  width: max-content;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .marquee-track {
+    animation: pulse-marquee 32s linear infinite;
+  }
+}
+@keyframes pulse-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/*
+ * Pre-JS states, applied ONLY where GSAP will animate
+ * (desktop viewport + motion allowed). No JS → nothing is ever hidden.
+ */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .js-hero-headline {
+    opacity: 0;
+  }
+  .js-hero-mock {
+    transform: perspective(1200px) rotateX(16deg) scale(0.86) translateY(70px);
+    will-change: transform;
+  }
+  .js-problem-line {
+    transform: translateY(115%);
+  }
+}
+
+/* ————— film grain ————— */
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* ————— global kill switch for CSS motion ————— */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

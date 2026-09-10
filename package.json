@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Pulse — premium landing page for a social media automation SaaS. React 18 + Vite + GSAP + Tailwind v4.",
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run db:up && npm run seed && concurrently -n web,api -c cyan,yellow \"vite\" \"npm --prefix server run dev\"",
+    "dev:web": "vite",
     "build": "vite build && node scripts/build-seo.mjs",
     "seo:verify": "node scripts/verify-seo.mjs",
     "preview": "vite preview",
@@ -14,7 +15,7 @@
     "db:up": "node server/scripts/local-db.mjs up",
     "db:down": "node server/scripts/local-db.mjs down",
     "seed": "node server/scripts/seed.mjs",
-    "up": "npm run db:up && npm run seed && concurrently -n web,api -c cyan,yellow \"npm run dev\" \"npm run dev:server\""
+    "up": "npm run dev"
   },
   "dependencies": {
     "gsap": "^3.15.0",

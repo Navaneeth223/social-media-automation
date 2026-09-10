@@ -158,8 +158,10 @@ Section 01 scrubs a 300-frame canvas sequence of the product UI behind the copy,
 
 ```bash
 npm install    # once (adds concurrently)
-npm run up     # local MongoDB → seed demo account → web + API together
+npm run dev    # starts EVERYTHING: local MongoDB → demo seed → web + API
 ```
+
+(`npm run up` is the same thing; `npm run dev:web` / `npm run dev:server` run the halves alone. If you open the site before the stack is up, the UI now tells you explicitly instead of failing with a cryptic 500.)
 
 Then open http://localhost:5173, click any "Start free", or go straight to the login page.
 

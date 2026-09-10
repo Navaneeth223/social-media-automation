@@ -19,6 +19,17 @@ export function createApp() {
     res.json({ ok: true, db: mongoose.connection.readyState === 1 ? "up" : "down" });
   });
 
+  // Friendly 503 (never a raw 500) when the local database isn't running.
+  app.use("/api", (req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        error:
+          "Database not connected — run `npm run db:up` (repo root), then restart the API (`npm run dev`).",
+      });
+    }
+    next();
+  });
+
   app.use("/api/auth", authRouter);
 
   app.use((req, res) => res.status(404).json({ error: "Not found" }));

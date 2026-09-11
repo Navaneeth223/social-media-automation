@@ -22,6 +22,12 @@ export const config = {
     redirectUri:
       process.env.LINKEDIN_REDIRECT_URI || "http://localhost:8787/api/auth/linkedin/callback",
   },
+  instagram: {
+    clientId: process.env.INSTAGRAM_CLIENT_ID || "",
+    clientSecret: process.env.INSTAGRAM_CLIENT_SECRET || "",
+    redirectUri:
+      process.env.INSTAGRAM_REDIRECT_URI || "http://localhost:8787/api/auth/instagram/callback",
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",

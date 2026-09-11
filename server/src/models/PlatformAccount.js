@@ -9,7 +9,7 @@ import { encrypt } from "../services/crypto.js";
 const platformAccountSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    platform: { type: String, required: true, enum: ["linkedin", "youtube"] },
+    platform: { type: String, required: true, enum: ["linkedin", "youtube", "instagram"] },
     platformAccountId: { type: String, required: true }, // urn:li:person:… or channel id
     displayName: { type: String, default: "" },
     email: { type: String, default: "" },

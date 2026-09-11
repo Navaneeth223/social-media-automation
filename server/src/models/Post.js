@@ -9,11 +9,12 @@ import mongoose from "mongoose";
 const postSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    platform: { type: String, required: true, enum: ["linkedin", "youtube"] },
-    text: { type: String, trim: true, maxlength: 3000, default: "" }, // LinkedIn commentary
+    platform: { type: String, required: true, enum: ["linkedin", "youtube", "instagram"] },
+    text: { type: String, trim: true, maxlength: 3000, default: "" }, // LinkedIn commentary / IG caption
     // YouTube-specific fields (videos.insert):
     title: { type: String, trim: true, maxlength: 100, default: "" },
     videoUrl: { type: String, default: "" }, // public https URL of the video file
+    imageUrl: { type: String, default: "" }, // public https URL of the photo (Instagram)
     description: { type: String, trim: true, maxlength: 5000, default: "" },
     privacyStatus: {
       type: String,

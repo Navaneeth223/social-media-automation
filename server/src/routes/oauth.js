@@ -12,10 +12,20 @@ import {
   GOOGLE_SCOPES,
 } from "../services/youtube.js";
 
+import {
+  authorizeUrl as instagramAuthorize,
+  exchangeCode as instagramExchange,
+  exchangeLongLived,
+  fetchAccount as fetchInstagramAccount,
+  isConfigured as instagramConfigured,
+  IG_SCOPES,
+} from "../services/instagram.js";
+
 export const oauthRouter = Router();
 
 const STATE_COOKIE = "li_oauth_state";
 const YT_STATE_COOKIE = "yt_oauth_state";
+const IG_STATE_COOKIE = "ig_oauth_state";
 
 function openState(res, cookieName) {
   const state = crypto.randomBytes(16).toString("hex");

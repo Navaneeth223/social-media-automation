@@ -10,6 +10,8 @@ process.env.JWT_SECRET = "smoke-test-secret";
 process.env.MONGODB_URI = "mongodb://127.0.0.1:27017/pulse-smoke-placeholder";
 process.env.LINKEDIN_CLIENT_ID = "test-client-id";
 process.env.LINKEDIN_CLIENT_SECRET = "test-client-secret";
+process.env.GOOGLE_CLIENT_ID = "test-google-id";
+process.env.GOOGLE_CLIENT_SECRET = "test-google-secret";
 
 import assert from "node:assert/strict";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -53,6 +55,40 @@ globalThis.fetch = async (input, init) => {
   }
   if (url.includes("api.linkedin.com/rest/posts")) {
     return json({ id: "urn:li:share:721234567890123456" }, 201);
+  }
+  /* Phase 3: Google / YouTube stubs — token exchange, refresh, channel, and
+     the resumable upload session + byte-put. */
+  if (url.includes("oauth2.googleapis.com/token")) {
+    const isRefresh = String(init?.body || "").includes("grant_type=refresh_token");
+    return json(
+      isRefresh
+        ? { access_token: "yt-fresh-token", expires_in: 3599 }
+        : {
+            access_token: "yt-access-token",
+            refresh_token: "yt-refresh-token",
+            expires_in: 3599,
+            scope: "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",
+          }
+    );
+  }
+  if (url.includes("googleapis.com/youtube/v3/channels")) {
+    return json({ items: [{ id: "UC123abc", snippet: { title: "Pulse Demo Channel" } }] });
+  }
+  if (url.includes("uploadType=resumable")) {
+    return new Response(null, {
+      status: 200,
+      headers: { Location: "https://www.googleapis.com/upload/session/smoke-123" },
+    });
+  }
+  if (url.includes("upload/session/smoke-123")) {
+    return json({ id: "yt-video-123" }, 200);
+  }
+  /* The video "file" the upload streams from. */
+  if (url === "https://example.com/demo-video.mp4") {
+    return new Response("fake-video-bytes", {
+      status: 200,
+      headers: { "Content-Type": "video/mp4", "Content-Length": "16" },
+    });
   }
   return realFetch(input, init);
 };
@@ -317,6 +353,151 @@ try {
     const posted = list.data.posts.find((p) => p.status === "posted");
     const delPosted = await j(`/api/posts/${posted.id}`, { method: "DELETE", headers: { Cookie: cookie } });
     assert.equal(delPosted.status, 400, "history cannot be deleted");
+  });
+
+  await step("YouTube OAuth: authorize → callback stores ENCRYPTED access + refresh tokens", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const auth = await fetch(`${base}/api/auth/youtube`, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    assert.equal(auth.status, 302, "authorize redirects to Google");
+    const loc = auth.headers.get("location");
+    assert.ok(loc.includes("accounts.google.com/o/oauth2/v2/auth"), loc);
+    const params = new URL(loc).searchParams;
+    assert.ok(params.get("scope").includes("youtube.upload"), "upload scope requested");
+    assert.equal(params.get("access_type"), "offline", "offline access for refresh token");
+    const ytState = params.get("state");
+    const ytCookie = auth
+      .headers.getSetCookie()
+      .find((c) => c.startsWith("yt_oauth_state="))
+      ?.split(";")[0];
+    assert.ok(ytState && ytCookie, "state param + CSRF cookie set");
+
+    const cb = await fetch(`${base}/api/auth/youtube/callback?code=fake-code&state=${ytState}`, {
+      headers: { Cookie: `${cookie}; ${ytCookie}` },
+      redirect: "manual",
+    });
+    assert.ok(
+      cb.headers.get("location").startsWith("/app?connected=youtube"),
+      cb.headers.get("location")
+    );
+
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    const { decrypt } = await import("./src/services/crypto.js");
+    const acct = await PlatformAccount.findOne({ platform: "youtube" });
+    assert.ok(acct, "account stored");
+    assert.ok(!JSON.stringify(acct.toObject()).includes("yt-refresh-token"), "refresh token encrypted at rest");
+    assert.equal(decrypt(acct.refreshTokenEnc), "yt-refresh-token");
+    assert.equal(acct.displayName, "Pulse Demo Channel", "channel identity stored");
+  });
+
+  await step("YouTube post now → resumable upload stores the real video id", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookieOf(login) },
+      body: JSON.stringify({
+        platform: "youtube",
+        title: "One draft, seven feeds",
+        videoUrl: "https://example.com/demo-video.mp4",
+        description: "Uploaded by Pulse",
+        publishNow: true,
+      }),
+    });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.post.status, "posted");
+    assert.equal(r.data.post.publishedId, "yt-video-123");
+  });
+
+  await step("YouTube validation: title + video URL required (400)", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookieOf(login) },
+      body: JSON.stringify({ platform: "youtube", title: "", publishNow: true }),
+    });
+    assert.equal(r.status, 400);
+  });
+
+  await step("YouTube scheduled upload auto-REFRESHES the expired access token", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    // Simulate a token that expired a day after connecting.
+    await PlatformAccount.findOneAndUpdate(
+      { platform: "youtube" },
+      { $set: { expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
+    );
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({
+        platform: "youtube",
+        title: "Scheduled upload with refresh",
+        videoUrl: "https://example.com/demo-video.mp4",
+        scheduledFor: new Date(Date.now() - 1000).toISOString(),
+      }),
+    });
+    assert.equal(r.status, 201);
+    const { processOnce } = await import("./src/worker.js");
+    const first = await processOnce();
+    assert.ok(first, "worker claimed the youtube post");
+    const again = await processOnce();
+    assert.equal(again, null, "never double-uploads");
+
+    const list = await j("/api/posts", { headers: { Cookie: cookie } });
+    const posted = list.data.posts.find((p) => p.id === r.data.post.id);
+    assert.equal(posted.status, "posted", "upload went out once");
+    assert.equal(posted.publishedId, "yt-video-123");
+
+    const acct = await PlatformAccount.findOne({ platform: "youtube" });
+    const { decrypt } = await import("./src/services/crypto.js");
+    assert.equal(decrypt(acct.accessTokenEnc), "yt-fresh-token", "access token refreshed + re-encrypted");
+  });
+
+  await step("publish-now without a connected platform → honest 400", async () => {
+    await j("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ name: "No Conn", email: "noconn@example.com", password: PASSWORD }),
+    });
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "noconn@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const li = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({ platform: "linkedin", text: "test", publishNow: true }),
+    });
+    assert.equal(li.status, 400);
+    assert.ok(li.data.error.includes("Connect LinkedIn"), li.data.error);
+    const yt = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({
+        platform: "youtube",
+        title: "test",
+        videoUrl: "https://example.com/demo-video.mp4",
+        publishNow: true,
+      }),
+    });
+    assert.equal(yt.status, 400);
+    assert.ok(yt.data.error.includes("Connect YouTube"), yt.data.error);
   });
 } finally {
   server.close();

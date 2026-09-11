@@ -22,6 +22,12 @@ export const config = {
     redirectUri:
       process.env.LINKEDIN_REDIRECT_URI || "http://localhost:8787/api/auth/linkedin/callback",
   },
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+    redirectUri:
+      process.env.GOOGLE_REDIRECT_URI || "http://localhost:8787/api/auth/youtube/callback",
+  },
   isProd: process.env.NODE_ENV === "production",
   cookie: {
     name: "pulse_token",

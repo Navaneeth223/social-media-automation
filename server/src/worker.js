@@ -1,6 +1,9 @@
 import { Post } from "./models/Post.js";
 import { PlatformAccount } from "./models/PlatformAccount.js";
-import { publishPost } from "./services/linkedin.js";
+import { publish as publishLinkedIn } from "./services/linkedin.js";
+import { publish as publishYouTube } from "./services/youtube.js";
+
+const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube };
 
 /*
  * The scheduler. A Mongo-backed atomic-claim poller:
@@ -20,7 +23,7 @@ import { publishPost } from "./services/linkedin.js";
 
 const CLAIM_GRACE_MS = 10 * 60 * 1000;
 
-export async function processOnce({ publisher = publishPost } = {}) {
+export async function processOnce() {
   const now = new Date();
 
   const post = await Post.findOneAndUpdate(
@@ -35,13 +38,9 @@ export async function processOnce({ publisher = publishPost } = {}) {
         user: post.user,
         platform: post.platform,
       }).sort({ connectedAt: -1 });
-      if (!account) throw new Error("LinkedIn account is no longer connected");
+      if (!account) throw new Error(`${post.platform === "youtube" ? "YouTube channel" : "LinkedIn account"} is no longer connected`);
 
-      const result = await publisher({
-        accessTokenEnc: account.accessTokenEnc,
-        memberUrn: account.platformAccountId,
-        text: post.text,
-      });
+      const result = await PUBLISHERS[post.platform]({ account, post });
 
       await Post.findByIdAndUpdate(post._id, {
         $set: { status: "posted", publishedAt: new Date(), publishedId: result.id },

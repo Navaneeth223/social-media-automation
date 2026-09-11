@@ -36,7 +36,7 @@ import { PRODUCT } from "../lib/config";
  */
 const CONNECTIONS = [
   { name: "LinkedIn", Icon: Linkedin, phase: "Live", live: true, note: "Publishes to your own feed — free tier, no app review needed." },
-  { name: "YouTube", Icon: Youtube, phase: "Phase 3", live: false, note: "Uploads via Data API v3 to your own channel." },
+  { name: "YouTube", Icon: Youtube, phase: "Live", live: true, note: "Resumable uploads via Data API v3 to your own channel. Unverified apps upload as private." },
   { name: "Instagram", Icon: Instagram, phase: "Phase 4", live: false, note: "Meta Graph API — works for accounts added as testers first." },
   { name: "TikTok", Icon: Music2, phase: "Phase 5", live: false, note: "Posts stay private until TikTok audits the app. We'll say so in the UI." },
   { name: "X (Twitter)", Icon: Twitter, phase: "No API", live: false, note: "No free API tier exists — a copy-to-clipboard helper is planned instead." },
@@ -56,6 +56,11 @@ export default function Dashboard() {
   const [posts, setPosts] = useState([]);
   const [text, setText] = useState("");
   const [when, setWhen] = useState("");
+  const [tab, setTab] = useState("linkedin"); // composer target platform
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytUrl, setYtUrl] = useState("");
+  const [ytDesc, setYtDesc] = useState("");
+  const [ytPrivacy, setYtPrivacy] = useState("private");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const navigate = useNavigate();
@@ -63,6 +68,8 @@ export default function Dashboard() {
 
   const liAccount = connections?.connected.find((c) => c.platform === "linkedin") || null;
   const liConfigured = connections?.configured.linkedin ?? false;
+  const ytAccount = connections?.connected.find((c) => c.platform === "youtube") || null;
+  const ytConfigured = connections?.configured.youtube ?? false;
   const scheduledCount = posts.filter((p) => p.status === "scheduled").length;
 
   const load = useCallback(async () => {
@@ -103,26 +110,58 @@ export default function Dashboard() {
   }, [params]);
 
   async function handleCreate(publishNow) {
-    if (busy || !text.trim()) return;
-    setBusy(true);
+    if (busy) return;
     setNotice(null);
+
+    let payload;
+    if (tab === "youtube") {
+      if (!ytTitle.trim() || !ytUrl.trim()) {
+        setNotice({ error: "A title and a video URL are required for YouTube." });
+        return;
+      }
+      payload = {
+        platform: "youtube",
+        title: ytTitle.trim(),
+        videoUrl: ytUrl.trim(),
+        description: ytDesc.trim(),
+        privacyStatus: ytPrivacy,
+      };
+    } else {
+      if (!text.trim()) return;
+      payload = { platform: "linkedin", text: text.trim() };
+    }
+
+    if (publishNow) {
+      payload.publishNow = true;
+    } else {
+      if (!when) {
+        setNotice({ error: "Pick a date and time first." });
+        return;
+      }
+      payload.scheduledFor = new Date(when).toISOString();
+    }
+
+    setBusy(true);
     try {
+      const r = await createPost(payload);
       if (publishNow) {
-        const r = await createPost({ text: text.trim(), publishNow: true });
         setNotice(
           r.post.status === "posted"
-            ? { ok: "Posted to LinkedIn ✓" }
-            : { error: r.post.error || "LinkedIn refused the post — see the queue for the real error." }
+            ? {
+                ok:
+                  tab === "youtube"
+                    ? "Video uploaded to YouTube ✓ — private until you publish it there."
+                    : "Posted to LinkedIn ✓",
+              }
+            : { error: r.post.error || "The platform refused the post — see the queue for the real error." }
         );
       } else {
-        if (!when) {
-          setNotice({ error: "Pick a date and time first." });
-          return;
-        }
-        await createPost({ text: text.trim(), scheduledFor: new Date(when).toISOString() });
         setNotice({ ok: "Scheduled ✓ — Pulse publishes it at the right moment." });
       }
       setText("");
+      setYtTitle("");
+      setYtUrl("");
+      setYtDesc("");
       setWhen("");
     } catch (e) {
       setNotice({ error: e.message });
@@ -274,6 +313,50 @@ export default function Dashboard() {
             </span>
           )}
         </div>
+        {/* YouTube connection — the Phase 3 platform */}
+        <div className="mt-4 flex flex-col justify-between gap-4 rounded-2xl border border-line bg-coal p-6 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-soot">
+              <Youtube size={19} strokeWidth={1.75} />
+            </span>
+            <div>
+              <p className="font-medium">YouTube</p>
+              <p className="text-[13px] text-mute">
+                {ytAccount
+                  ? `Connected as ${ytAccount.displayName} — uploads to your channel.`
+                  : "Connect your Google account to upload videos. Works while the app is in Testing mode."}
+              </p>
+            </div>
+          </div>
+          {ytAccount ? (
+            <button
+              onClick={() => handleDisconnect("youtube")}
+              className="shrink-0 rounded-full border border-line px-5 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid"
+            >
+              Disconnect
+            </button>
+          ) : ytConfigured ? (
+            <a
+              href="/api/auth/youtube"
+              className="shrink-0 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink"
+            >
+              Connect YouTube
+            </a>
+          ) : (
+            <span className="shrink-0 rounded-full border border-line bg-soot px-5 py-2.5 text-[13px] font-medium text-mute">
+              Not configured on this server
+            </span>
+          )}
+        </div>
+        {!ytConfigured && !ytAccount && (
+          <p className="mt-2 text-xs leading-relaxed text-mute">
+            To go live: console.cloud.google.com → create a project → enable "YouTube Data API v3"
+            → OAuth consent screen (External, <span className="text-paper/80">Testing</span> mode,
+            add yourself as a test user) → OAuth client (Web) with redirect
+            <code className="mx-1 text-paper/80">http://localhost:8787/api/auth/youtube/callback</code>
+            → paste GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET into server/.env.
+          </p>
+        )}
         {!liConfigured && !liAccount && (
           <p className="mt-2 text-xs leading-relaxed text-mute">
             To go live: create an app at developer.linkedin.com, add the "Sign In with LinkedIn
@@ -284,27 +367,93 @@ export default function Dashboard() {
         )}
 
 
-        {/* Composer */}
+        {/* Composer — per-platform */}
         <div className="mt-8 rounded-2xl border border-line bg-coal p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-mute">
-            Compose · LinkedIn
-          </p>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={4}
-            maxLength={3000}
-            placeholder="What should go out today?"
-            className="mt-4 w-full resize-none rounded-xl border border-line bg-soot px-4 py-3 text-sm leading-relaxed text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
-          />
+          <div className="flex items-center gap-2">
+            {[
+              { id: "linkedin", label: "LinkedIn" },
+              { id: "youtube", label: "YouTube" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
+                  tab === t.id ? "bg-acid text-ink" : "border border-line text-mute hover:text-paper"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "youtube" ? (
+            <div className="mt-4 space-y-3">
+              <input
+                value={ytTitle}
+                onChange={(e) => setYtTitle(e.target.value)}
+                maxLength={100}
+                placeholder="Video title"
+                className="w-full rounded-xl border border-line bg-soot px-4 py-3 text-sm text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+              />
+              <input
+                value={ytUrl}
+                onChange={(e) => setYtUrl(e.target.value)}
+                placeholder="Public video URL — e.g. https://res.cloudinary.com/…/my-video.mp4"
+                className="w-full rounded-xl border border-line bg-soot px-4 py-3 text-sm text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+              />
+              <textarea
+                value={ytDesc}
+                onChange={(e) => setYtDesc(e.target.value)}
+                rows={3}
+                maxLength={5000}
+                placeholder="Description (optional)"
+                className="w-full resize-none rounded-xl border border-line bg-soot px-4 py-3 text-sm leading-relaxed text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={ytPrivacy}
+                  onChange={(e) => setYtPrivacy(e.target.value)}
+                  className="rounded-full border border-line bg-soot px-4 py-2 text-[13px] text-paper outline-none focus:border-acid/60"
+                >
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+                <p className="text-xs leading-relaxed text-mute">
+                  Unverified apps upload as <span className="text-paper/80">private</span> — flip
+                  public on YouTube or complete OAuth verification. 1 upload ≈ 1,600 of your
+                  10,000 free daily quota units.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              maxLength={3000}
+              placeholder="What should go out today?"
+              className="mt-4 w-full resize-none rounded-xl border border-line bg-soot px-4 py-3 text-sm leading-relaxed text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+            />
+          )}
+
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               onClick={() => handleCreate(true)}
-              disabled={busy || !text.trim() || !liAccount}
-              title={!liAccount ? "Connect LinkedIn to post instantly" : undefined}
+              disabled={
+                busy ||
+                (tab === "linkedin" ? !text.trim() || !liAccount : !ytTitle.trim() || !ytUrl.trim() || !ytAccount)
+              }
+              title={
+                tab === "youtube" && !ytAccount
+                  ? "Connect YouTube to upload instantly"
+                  : tab === "linkedin" && !liAccount
+                    ? "Connect LinkedIn to post instantly"
+                    : undefined
+              }
               className="flex items-center gap-2 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink transition-transform duration-300 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
             >
-              <Send size={14} /> Post now
+              <Send size={14} /> {tab === "youtube" ? "Upload now" : "Post now"}
             </button>
             <div className="flex items-center gap-2">
               <input
@@ -315,14 +464,13 @@ export default function Dashboard() {
               />
               <button
                 onClick={() => handleCreate(false)}
-                disabled={busy || !text.trim() || !when}
+                disabled={busy || (tab === "linkedin" ? !text.trim() : !ytTitle.trim() || !ytUrl.trim()) || !when}
                 title="Schedules the post — Pulse publishes it automatically"
                 className="flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Timer size={14} /> Schedule
               </button>
             </div>
-            <span className="ml-auto text-xs text-mute">{3000 - text.length} characters left</span>
           </div>
         </div>
 
@@ -351,7 +499,7 @@ export default function Dashboard() {
                     >
                       {p.status}
                     </span>
-                    <p className="min-w-0 flex-1 truncate text-sm">{p.text}</p>
+                    <p className="min-w-0 flex-1 truncate text-sm">{p.title || p.text}</p>
                     <span className="text-xs text-mute">
                       {p.status === "posted" && p.publishedAt
                         ? `posted ${new Date(p.publishedAt).toLocaleString()}`
@@ -390,7 +538,9 @@ export default function Dashboard() {
         </p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CONNECTIONS.map(({ name, Icon, note, phase, live }) => {
-            const isLiveLinkedIn = name === "LinkedIn";
+            const isLinkedIn = name === "LinkedIn";
+            const isYouTube = name === "YouTube";
+            const isConnected = (isLinkedIn && liAccount) || (isYouTube && ytAccount);
             return (
               <div key={name} className="flex flex-col rounded-2xl border border-line bg-coal p-5">
                 <div className="flex items-center justify-between">
@@ -398,14 +548,14 @@ export default function Dashboard() {
                     <Icon size={16} strokeWidth={1.75} />
                   </span>
                   <span
-                    className={`chip ${live || (isLiveLinkedIn && liAccount) ? "border-acid/40 text-acid" : "border-line bg-soot text-mute"}`}
+                    className={`chip ${live || isConnected ? "border-acid/40 text-acid" : "border-line bg-soot text-mute"}`}
                   >
-                    {isLiveLinkedIn && liAccount ? "connected" : phase}
+                    {isConnected ? "connected" : phase}
                   </span>
                 </div>
                 <p className="mt-4 font-medium">{name}</p>
                 <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-mute">{note}</p>
-                {!isLiveLinkedIn && (
+                {!isLinkedIn && !isYouTube && (
                   <button
                     disabled
                     title="Goes live in a later phase — never a dead click"

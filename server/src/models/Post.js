@@ -9,8 +9,17 @@ import mongoose from "mongoose";
 const postSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    platform: { type: String, required: true, enum: ["linkedin"] },
-    text: { type: String, required: true, trim: true, minlength: 1, maxlength: 3000 },
+    platform: { type: String, required: true, enum: ["linkedin", "youtube"] },
+    text: { type: String, trim: true, maxlength: 3000, default: "" }, // LinkedIn commentary
+    // YouTube-specific fields (videos.insert):
+    title: { type: String, trim: true, maxlength: 100, default: "" },
+    videoUrl: { type: String, default: "" }, // public https URL of the video file
+    description: { type: String, trim: true, maxlength: 5000, default: "" },
+    privacyStatus: {
+      type: String,
+      enum: ["private", "unlisted", "public"],
+      default: "private",
+    },
     status: {
       type: String,
       enum: ["scheduled", "publishing", "posted", "failed"],

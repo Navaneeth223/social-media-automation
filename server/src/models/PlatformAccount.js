@@ -9,8 +9,8 @@ import { encrypt } from "../services/crypto.js";
 const platformAccountSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    platform: { type: String, required: true, enum: ["linkedin"] },
-    platformAccountId: { type: String, required: true }, // e.g. urn:li:person:abc123
+    platform: { type: String, required: true, enum: ["linkedin", "youtube"] },
+    platformAccountId: { type: String, required: true }, // urn:li:person:… or channel id
     displayName: { type: String, default: "" },
     email: { type: String, default: "" },
     accessTokenEnc: {
@@ -18,6 +18,14 @@ const platformAccountSchema = new mongoose.Schema(
       required: true,
       set: (v) => encrypt(v), // encrypt transparently on assignment
     },
+    // Google access tokens expire after ~1h — the refresh token is what keeps
+    // scheduled uploads working days later. Encrypt it like any other token.
+    refreshTokenEnc: {
+      type: String,
+      default: "",
+      set: (v) => (v ? encrypt(v) : v),
+    },
+    expiresAt: { type: Date },
     scope: { type: String, default: "" },
     connectedAt: { type: Date, default: Date.now },
   },

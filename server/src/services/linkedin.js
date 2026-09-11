@@ -87,3 +87,12 @@ export async function publishPost({ accessTokenEnc, memberUrn, text }) {
   }
   return { id: data.id };
 }
+
+/* Uniform publisher interface shared with the scheduler (worker.js). */
+export function publish({ account, post }) {
+  return publishPost({
+    accessTokenEnc: account.accessTokenEnc,
+    memberUrn: account.platformAccountId,
+    text: post.text,
+  });
+}

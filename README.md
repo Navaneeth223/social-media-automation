@@ -178,6 +178,27 @@ Scope: publishes to **your own feed** (`w_member_social`) — free tier, no app 
 
 ---
 
+## Phase 3 — YouTube, fully live
+
+Same real pipeline as LinkedIn, extended for video: **Google OAuth (offline access) → encrypted access + refresh tokens → video composer → resumable upload → scheduler with automatic token refresh.**
+
+- **Connect:** `/app` → YouTube tab → "Connect YouTube" → Google consent (Testing mode works for your own channel — add yourself as a test user). Stores the **refresh token encrypted** too — that's what keeps scheduled uploads alive after the ~1h access token dies.
+- **Composer:** video title, a **public video URL** (e.g. a Cloudinary MP4), description, and privacy choice. **Upload now** streams the file straight from the URL into YouTube's resumable-upload protocol — nothing buffered in memory. **Schedule** stores it; the worker uploads it at the right moment and **auto-refreshes the access token first**.
+- **Honesty baked in:** uploads from unverified API projects are locked to *private* by YouTube — the composer says so, and every video shows the real API error if one occurs. Quota is displayed too (1 upload ≈ 1,600 of 10,000 free daily units).
+
+### Make it live with your credentials (10 minutes, free)
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → create a project → **APIs & Services → enable "YouTube Data API v3"**.
+2. **OAuth consent screen**: External, put it in **Testing** mode, add your own Google account as a test user.
+3. **Credentials → Create OAuth client ID** (Web application) → redirect URI: `http://localhost:8787/api/auth/youtube/callback`.
+4. Copy the Client ID/Secret into `server/.env` (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`) → restart `npm run dev` → Connect YouTube → upload for real.
+
+### Phase 3 verification
+
+`cd server && npm run smoke` — 21 checks, now including: YouTube OAuth flow with offline scope, encrypted refresh-token storage (a security bug the test caught before it shipped), resumable upload storing the real video id, **automatic access-token refresh on expiry** (simulated a day-old token → fresh one used and re-encrypted), and honest 400s when publishing without a connection.
+
+---
+
 ## Local demo mode — everything on this computer (no cloud, no cost)
 
 ```bash

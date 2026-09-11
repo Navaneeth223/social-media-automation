@@ -34,3 +34,9 @@ export const getMe = () => api("/api/auth/me");
 export const register = (payload) => api("/api/auth/register", { method: "POST", body: payload });
 export const login = (payload) => api("/api/auth/login", { method: "POST", body: payload });
 export const logout = () => api("/api/auth/logout", { method: "POST" });
+export const getConnections = () => api("/api/connections");
+export const getPosts = () => api("/api/posts");
+export const createPost = (payload) => api("/api/posts", { method: "POST", body: payload });
+export const deletePost = (id) => api(`/api/posts/${id}`, { method: "DELETE" });
+export const disconnectPlatform = (platform) =>
+  api(`/api/connections/${platform}`, { method: "DELETE" });

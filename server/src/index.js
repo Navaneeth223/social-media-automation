@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { connectDb } from "./db.js";
 import { createApp } from "./app.js";
+import { startWorker } from "./worker.js";
 
 try {
   await connectDb();
@@ -10,8 +11,11 @@ try {
     console.log(`Pulse API on http://localhost:${config.port} (db up · origin ${config.clientOrigin})`);
   });
 
+  const stopWorker = startWorker({ intervalMs: 5000 });
+
   const shutdown = (sig) => {
-    console.log(`${sig} — closing server and db connection`);
+    console.log(`${sig} — closing server, worker and db connection`);
+    stopWorker();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();
   };

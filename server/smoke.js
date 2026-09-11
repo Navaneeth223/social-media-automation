@@ -7,6 +7,9 @@
  */
 process.env.NODE_ENV = "test";
 process.env.JWT_SECRET = "smoke-test-secret";
+process.env.MONGODB_URI = "mongodb://127.0.0.1:27017/pulse-smoke-placeholder";
+process.env.LINKEDIN_CLIENT_ID = "test-client-id";
+process.env.LINKEDIN_CLIENT_SECRET = "test-client-secret";
 
 import assert from "node:assert/strict";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -34,6 +37,25 @@ await connectDb(process.env.MONGODB_URI);
 const app = createApp();
 const server = app.listen(0);
 const base = `http://127.0.0.1:${server.address().port}`;
+
+/* Phase 2: intercept LinkedIn endpoints so the REAL service code (token
+   exchange, userinfo, /rest/posts) runs end-to-end without live credentials. */
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  const url = String(input instanceof Request ? input.url : input);
+  const json = (obj, status = 200) =>
+    new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+  if (url.includes("linkedin.com/oauth/v2/accessToken")) {
+    return json({ access_token: "fake-access-token", expires_in: 5184000, scope: "openid profile email w_member_social" });
+  }
+  if (url.includes("api.linkedin.com/v2/userinfo")) {
+    return json({ sub: "abc123def", name: "Demo User", email: "demo@pulse.app" });
+  }
+  if (url.includes("api.linkedin.com/rest/posts")) {
+    return json({ id: "urn:li:share:721234567890123456" }, 201);
+  }
+  return realFetch(input, init);
+};
 
 const j = async (path, opts = {}) => {
   const res = await fetch(base + path, {
@@ -158,6 +180,143 @@ try {
     assert.equal(out.status, 200);
     assert.equal((await me(cookieA)).status, 401, "older session dies too");
     assert.equal((await me(cookieB)).status, 401, "current session dies");
+  });
+
+  await step("platform tokens encrypt at rest and round-trip", async () => {
+    const { encrypt, decrypt } = await import("./src/services/crypto.js");
+    const secret = "fake-access-token-plain";
+    const stored = encrypt(secret);
+    assert.ok(!stored.includes(secret), "plaintext never stored");
+    assert.equal(decrypt(stored), secret);
+  });
+
+  await step("OAuth flow: authorize → callback stores an ENCRYPTED token", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const auth = await fetch(`${base}/api/auth/linkedin`, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    assert.equal(auth.status, 302, "authorize redirects to LinkedIn");
+    const loc = auth.headers.get("location");
+    assert.ok(loc.includes("linkedin.com/oauth/v2/authorization"), loc);
+    assert.ok(new URL(loc).searchParams.get("scope").includes("w_member_social"), "scopes requested");
+    const stateUrl = new URL(loc).searchParams.get("state");
+    const liCookie = auth
+      .headers.getSetCookie()
+      .find((c) => c.startsWith("li_oauth_state="))
+      ?.split(";")[0];
+    assert.ok(stateUrl && liCookie, "state param + CSRF state cookie set");
+
+    const cb = await fetch(`${base}/api/auth/linkedin/callback?code=fake-code&state=${stateUrl}`, {
+      headers: { Cookie: `${cookie}; ${liCookie}` },
+      redirect: "manual",
+    });
+    assert.equal(cb.status, 302, "callback redirects");
+    assert.ok(
+      cb.headers.get("location").startsWith("/app?connected=linkedin"),
+      cb.headers.get("location")
+    );
+
+    const conns = await j("/api/connections", { headers: { Cookie: cookie } });
+    assert.equal(conns.data.configured.linkedin, true);
+    assert.equal(conns.data.connected[0]?.platform, "linkedin");
+    assert.equal(conns.data.connected[0]?.displayName, "Demo User");
+
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    const { decrypt } = await import("./src/services/crypto.js");
+    const acct = await PlatformAccount.findOne({ platform: "linkedin" });
+    assert.ok(acct, "account stored");
+    assert.ok(!JSON.stringify(acct.toObject()).includes("fake-access-token"), "token encrypted at rest");
+    assert.equal(decrypt(acct.accessTokenEnc), "fake-access-token", "decrypts for publishing");
+  });
+
+  await step("post now → real publish path (stubbed API) stores the platform id", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({ text: "Shipped with Pulse — one draft, seven feeds.", publishNow: true }),
+    });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.post.status, "posted");
+    assert.equal(r.data.post.publishedId, "urn:li:share:721234567890123456");
+    assert.ok(r.data.post.publishedAt, "publish timestamp recorded");
+  });
+
+  await step("scheduled post publishes EXACTLY once (worker idempotency)", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({ text: "Scheduled by Pulse", scheduledFor: new Date(Date.now() - 1000).toISOString() }),
+    });
+    assert.equal(r.status, 201);
+    const postId = r.data.post.id;
+    assert.equal(r.data.post.status, "scheduled");
+
+    const { processOnce } = await import("./src/worker.js");
+    const first = await processOnce();
+    assert.ok(first, "first claim wins");
+    const again = await processOnce();
+    assert.equal(again, null, "second pass never re-claims");
+
+    const list = await j("/api/posts", { headers: { Cookie: cookie } });
+    const posted = list.data.posts.find((p) => p.id === postId);
+    assert.equal(posted.status, "posted", "post went out once");
+  });
+
+  await step("worker restart mid-publish FAILS honestly instead of double-posting", async () => {
+    const { Post } = await import("./src/models/Post.js");
+    const { processOnce } = await import("./src/worker.js");
+    const { User } = await import("./src/models/User.js");
+    const u = await User.findOne({ email: "maya@example.com" });
+    await Post.create({
+      user: u._id,
+      platform: "linkedin",
+      text: "stale claim from a dead worker",
+      status: "publishing",
+      scheduledFor: new Date(),
+      claimedAt: new Date(Date.now() - 11 * 60 * 1000),
+    });
+    await processOnce();
+    const p = await Post.findOne({ text: "stale claim from a dead worker" });
+    assert.equal(p.status, "failed");
+    assert.ok(p.error.includes("interrupted"), p.error);
+  });
+
+  await step("posts API: list + delete rules", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const list = await j("/api/posts", { headers: { Cookie: cookie } });
+    assert.ok(list.data.posts.length >= 3, `${list.data.posts.length} posts`);
+
+    const scheduled = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({ text: "delete me later", scheduledFor: new Date(Date.now() + 3600_000).toISOString() }),
+    });
+    assert.equal(scheduled.status, 201);
+    const del = await j(`/api/posts/${scheduled.data.post.id}`, { method: "DELETE", headers: { Cookie: cookie } });
+    assert.equal(del.status, 200);
+
+    const posted = list.data.posts.find((p) => p.status === "posted");
+    const delPosted = await j(`/api/posts/${posted.id}`, { method: "DELETE", headers: { Cookie: cookie } });
+    assert.equal(delPosted.status, 400, "history cannot be deleted");
   });
 } finally {
   server.close();

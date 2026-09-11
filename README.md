@@ -154,6 +154,30 @@ Section 01 scrubs a 300-frame canvas sequence of the product UI behind the copy,
 
 ---
 
+## Phase 2 — LinkedIn, fully live
+
+The whole pipeline is real: **OAuth connect → encrypted token storage → composer → scheduler → real publish → real success/failure states.**
+
+- **Connect:** `/app` → "Connect LinkedIn" → LinkedIn consent screen → callback stores the access token **encrypted at rest** (AES-256-GCM, `ENCRYPTION_KEY`) — plaintext never touches the database.
+- **Composer:** write once, **Post now** (direct publish via LinkedIn's `/rest/posts`) or **Schedule** (stored with `scheduledFor`, published automatically by the worker at the right moment).
+- **Scheduler:** a Mongo-backed atomic-claim poller (`server/src/worker.js`, 5s interval). `findOneAndUpdate` claims exactly one due post per tick — a worker restart can never claim or publish the same post twice. A claim from a *dead* worker becomes a `failed` post with an honest "interrupted — check your feed" message instead of risking a double-post. Swap-in path for BullMQ + Redis later: the publish service and Post model don't change.
+- **Truth in the UI:** if LinkedIn fails, the queue shows LinkedIn's REAL error text. The connect button either starts a real OAuth flow or is visibly labeled "Not configured on this server".
+
+### Make it live with your credentials (5 minutes, free)
+
+1. Create an app at [developer.linkedin.com](https://www.linkedin.com/developers) and add the products **"Sign In with LinkedIn using OpenID Connect"** and **"Share on LinkedIn"**.
+2. In the app's **Auth** tab, add the redirect URL: `http://localhost:8787/api/auth/linkedin/callback`.
+3. Copy the **Client ID** and **Client Secret** into `server/.env` (`LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`) and restart `npm run dev`.
+4. On `/app`, hit **Connect LinkedIn** → approve → post for real.
+
+Scope: publishes to **your own feed** (`w_member_social`) — free tier, no app review needed. Multi-account support requires applying for LinkedIn's Community Management API (later phase).
+
+### Phase 2 verification
+
+`cd server && npm run smoke` — 17 checks including: token encryption at rest, the full OAuth flow (authorize → callback → encrypted storage), real publish path via a stubbed LinkedIn API, worker idempotency (publishes exactly once), and mid-restart honest failure.
+
+---
+
 ## Local demo mode — everything on this computer (no cloud, no cost)
 
 ```bash

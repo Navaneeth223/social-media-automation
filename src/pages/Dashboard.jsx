@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useSEO } from "../lib/seo";
 import {
   AtSign,
@@ -8,26 +8,39 @@ import {
   Linkedin,
   LogOut,
   Music2,
+  Send,
+  Timer,
+  Trash2,
   Twitter,
   Youtube,
 } from "lucide-react";
-import { getMe, logout } from "../lib/api";
+import {
+  createPost,
+  deletePost,
+  disconnectPlatform,
+  getConnections,
+  getMe,
+  getPosts,
+  logout,
+} from "../lib/api";
 import { PRODUCT } from "../lib/config";
 
 /*
- * The connection matrix tells the truth about every platform (rule: a button
- * either starts a real OAuth flow or is visibly disabled — never a dead click):
- *  - LinkedIn ships live in Phase 2 (free w_member_social, no app review),
+ * The real composer dashboard. The connection matrix tells the truth about
+ * every platform (a button either starts a real OAuth flow or is visibly
+ * disabled — never a dead click):
+ *  - LinkedIn is LIVE (Phase 2): OAuth connect → composer → real publishing
+ *    to your own feed (w_member_social, free tier, no app review),
  *  - YouTube Phase 3, Instagram Phase 4 (testers first), TikTok Phase 5
  *    (private posts until audit), X has no free API at all.
  */
 const CONNECTIONS = [
-  { name: "LinkedIn", Icon: Linkedin, phase: "Phase 2", live: true, note: "Publishes to your own profile — free tier, no app review needed." },
-  { name: "YouTube", Icon: Youtube, phase: "Phase 3", live: true, note: "Uploads via Data API v3 to your own channel." },
-  { name: "Instagram", Icon: Instagram, phase: "Phase 4", live: true, note: "Meta Graph API — works for accounts added as testers first." },
-  { name: "TikTok", Icon: Music2, phase: "Phase 5", live: true, note: "Posts stay private until TikTok audits the app. We'll say so in the UI." },
+  { name: "LinkedIn", Icon: Linkedin, phase: "Live", live: true, note: "Publishes to your own feed — free tier, no app review needed." },
+  { name: "YouTube", Icon: Youtube, phase: "Phase 3", live: false, note: "Uploads via Data API v3 to your own channel." },
+  { name: "Instagram", Icon: Instagram, phase: "Phase 4", live: false, note: "Meta Graph API — works for accounts added as testers first." },
+  { name: "TikTok", Icon: Music2, phase: "Phase 5", live: false, note: "Posts stay private until TikTok audits the app. We'll say so in the UI." },
   { name: "X (Twitter)", Icon: Twitter, phase: "No API", live: false, note: "No free API tier exists — a copy-to-clipboard helper is planned instead." },
-  { name: "Threads", Icon: AtSign, phase: "Phase 4+", live: true, note: "Rides the same Meta app as Instagram." },
+  { name: "Threads", Icon: AtSign, phase: "Phase 4+", live: false, note: "Rides the same Meta app as Instagram." },
 ];
 
 export default function Dashboard() {
@@ -39,17 +52,113 @@ export default function Dashboard() {
   });
 
   const [user, setUser] = useState(undefined); // undefined = loading, null = signed out
+  const [connections, setConnections] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [text, setText] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+
+  const liAccount = connections?.connected.find((c) => c.platform === "linkedin") || null;
+  const liConfigured = connections?.configured.linkedin ?? false;
+  const scheduledCount = posts.filter((p) => p.status === "scheduled").length;
+
+  const load = useCallback(async () => {
+    try {
+      const [c, p] = await Promise.all([getConnections(), getPosts()]);
+      setConnections(c);
+      setPosts(p.posts);
+    } catch (e) {
+      setNotice({ error: e.message });
+    }
+  }, []);
 
   useEffect(() => {
     let alive = true;
     getMe()
       .then((d) => alive && setUser(d.user))
       .catch(() => alive && setUser(null));
+    load();
+    const poll = setInterval(() => {
+      if (alive) load(); // watch scheduled → posted transitions live
+    }, 4000);
     return () => {
       alive = false;
+      clearInterval(poll);
     };
-  }, []);
+  }, [load]);
+
+  // Returned from the LinkedIn OAuth redirect: /app?connected=linkedin[&error=…]
+  useEffect(() => {
+    if (params.get("connected") === "linkedin") {
+      const error = params.get("error");
+      setNotice(
+        error
+          ? { error: decodeURIComponent(error) }
+          : { ok: "LinkedIn connected — write something and post it for real." }
+      );
+    }
+  }, [params]);
+
+  async function handleCreate(publishNow) {
+    if (busy || !text.trim()) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      if (publishNow) {
+        const r = await createPost({ text: text.trim(), publishNow: true });
+        setNotice(
+          r.post.status === "posted"
+            ? { ok: "Posted to LinkedIn ✓" }
+            : { error: r.post.error || "LinkedIn refused the post — see the queue for the real error." }
+        );
+      } else {
+        if (!when) {
+          setNotice({ error: "Pick a date and time first." });
+          return;
+        }
+        await createPost({ text: text.trim(), scheduledFor: new Date(when).toISOString() });
+        setNotice({ ok: "Scheduled ✓ — Pulse publishes it at the right moment." });
+      }
+      setText("");
+      setWhen("");
+    } catch (e) {
+      setNotice({ error: e.message });
+    } finally {
+      setBusy(false);
+      load();
+    }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await deletePost(id);
+    } finally {
+      load();
+    }
+  }
+
+  async function handleDisconnect(platform) {
+    try {
+      await disconnectPlatform(platform);
+      setNotice({ ok: "LinkedIn disconnected." });
+    } catch (e) {
+      setNotice({ error: e.message });
+    } finally {
+      load();
+    }
+  }
+
+  async function signOut() {
+    try {
+      await logout();
+    } finally {
+      navigate("/");
+    }
+  }
+
 
   if (user === undefined) {
     return (
@@ -65,14 +174,6 @@ export default function Dashboard() {
     Math.ceil((new Date(user.trialEndsAt) - Date.now()) / (24 * 60 * 60 * 1000))
   );
   const firstName = user.name.split(" ")[0];
-
-  async function signOut() {
-    try {
-      await logout();
-    } finally {
-      navigate("/");
-    }
-  }
 
   return (
     <div className="min-h-svh bg-ink text-paper">
@@ -98,6 +199,16 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-5 py-10">
+        {notice && (
+          <p
+            className={`mb-6 rounded-lg border-l-2 px-4 py-3 text-sm ${
+              notice.ok ? "border-acid bg-acid/10 text-paper" : "border-acid bg-soot text-paper"
+            }`}
+          >
+            {notice.ok || notice.error}
+          </p>
+        )}
+
         <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-mute">
           Your workspace
         </p>
@@ -121,43 +232,194 @@ export default function Dashboard() {
           </div>
           <div className="bg-coal p-6">
             <p className="text-[11px] uppercase tracking-[0.25em] text-mute">Queue</p>
-            <p className="mt-2 font-display text-3xl font-semibold">Empty</p>
-            <p className="mt-1 text-xs text-mute">The composer ships with Phase 2 (LinkedIn live).</p>
+            <p className="mt-2 font-display text-3xl font-semibold">{scheduledCount}</p>
+            <p className="mt-1 text-xs text-mute">
+              {scheduledCount ? "publishing automatically" : "nothing scheduled yet"}
+            </p>
           </div>
         </div>
 
-        <h2 className="mt-12 font-display text-2xl font-semibold">Platform connections</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mute">
-          Each connect button goes live with its phase — and every platform only does what its API
-          genuinely allows. No fake toggles here.
-        </p>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CONNECTIONS.map(({ name, Icon, note, phase, live }) => (
-            <div key={name} className="flex flex-col rounded-2xl border border-line bg-coal p-5">
-              <div className="flex items-center justify-between">
-                <span className="grid h-9 w-9 place-items-center rounded-lg border border-line bg-soot">
-                  <Icon size={16} strokeWidth={1.75} />
-                </span>
-                <span
-                  className={`chip ${live ? "border-acid/40 text-acid" : "border-line bg-soot text-mute"}`}
-                >
-                  {phase}
-                </span>
-              </div>
-              <p className="mt-4 font-medium">{name}</p>
-              <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-mute">{note}</p>
+        {/* LinkedIn connection — the Phase 2 platform */}
+        <div className="mt-6 flex flex-col justify-between gap-4 rounded-2xl border border-acid/30 bg-coal p-6 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-soot">
+              <Linkedin size={19} strokeWidth={1.75} />
+            </span>
+            <div>
+              <p className="font-medium">LinkedIn</p>
+              <p className="text-[13px] text-mute">
+                {liAccount
+                  ? `Connected as ${liAccount.displayName} — posting to your own feed.`
+                  : "Connect your profile to publish for real. Posts to your own feed only."}
+              </p>
+            </div>
+          </div>
+          {liAccount ? (
+            <button
+              onClick={() => handleDisconnect("linkedin")}
+              className="shrink-0 rounded-full border border-line px-5 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid"
+            >
+              Disconnect
+            </button>
+          ) : liConfigured ? (
+            <a
+              href="/api/auth/linkedin"
+              className="shrink-0 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink"
+            >
+              Connect LinkedIn
+            </a>
+          ) : (
+            <span className="shrink-0 rounded-full border border-line bg-soot px-5 py-2.5 text-[13px] font-medium text-mute">
+              Not configured on this server
+            </span>
+          )}
+        </div>
+        {!liConfigured && !liAccount && (
+          <p className="mt-2 text-xs leading-relaxed text-mute">
+            To go live: create an app at developer.linkedin.com, add the "Sign In with LinkedIn
+            using OpenID Connect" + "Share on LinkedIn" products, set the redirect URL to
+            <code className="mx-1 text-paper/80">http://localhost:8787/api/auth/linkedin/callback</code>
+            and paste LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET into server/.env.
+          </p>
+        )}
+
+
+        {/* Composer */}
+        <div className="mt-8 rounded-2xl border border-line bg-coal p-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-mute">
+            Compose · LinkedIn
+          </p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            maxLength={3000}
+            placeholder="What should go out today?"
+            className="mt-4 w-full resize-none rounded-xl border border-line bg-soot px-4 py-3 text-sm leading-relaxed text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => handleCreate(true)}
+              disabled={busy || !text.trim() || !liAccount}
+              title={!liAccount ? "Connect LinkedIn to post instantly" : undefined}
+              className="flex items-center gap-2 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink transition-transform duration-300 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
+            >
+              <Send size={14} /> Post now
+            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="datetime-local"
+                value={when}
+                onChange={(e) => setWhen(e.target.value)}
+                className="rounded-full border border-line bg-soot px-4 py-2 text-[13px] text-paper outline-none focus:border-acid/60"
+              />
               <button
-                disabled
-                title="Goes live in a later phase — never a dead click"
-                className="mt-4 cursor-not-allowed rounded-full border border-line bg-soot py-2.5 text-[13px] font-medium text-mute"
+                onClick={() => handleCreate(false)}
+                disabled={busy || !text.trim() || !when}
+                title="Schedules the post — Pulse publishes it automatically"
+                className="flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Connect — coming soon
+                <Timer size={14} /> Schedule
               </button>
             </div>
-          ))}
+            <span className="ml-auto text-xs text-mute">{3000 - text.length} characters left</span>
+          </div>
         </div>
-      </main>
 
+
+        {/* Queue — real posts, real statuses, real errors */}
+        <div className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-2xl font-semibold">Queue</h2>
+            <span className="text-xs text-mute">auto-refreshing</span>
+          </div>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-line">
+            {posts.length === 0 ? (
+              <p className="bg-coal p-6 text-sm text-mute">
+                Nothing here yet — write something above and post it or schedule it.
+              </p>
+            ) : (
+              posts.map((p) => (
+                <div key={p.id} className="border-t border-line bg-coal p-4 first:border-t-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span
+                      className={`chip ${
+                        p.status === "posted" || p.status === "scheduled"
+                          ? "border-acid/40 text-acid"
+                          : "border-line bg-soot text-mute"
+                      }`}
+                    >
+                      {p.status}
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-sm">{p.text}</p>
+                    <span className="text-xs text-mute">
+                      {p.status === "posted" && p.publishedAt
+                        ? `posted ${new Date(p.publishedAt).toLocaleString()}`
+                        : p.status === "scheduled"
+                          ? `due ${new Date(p.scheduledFor).toLocaleString()}`
+                          : p.status === "failed"
+                            ? "failed"
+                            : "publishing…"}
+                    </span>
+                    {p.status === "scheduled" && (
+                      <button
+                        onClick={() => handleDelete(p.id)}
+                        aria-label="Delete scheduled post"
+                        className="text-mute transition-colors hover:text-acid"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
+                  {p.status === "failed" && p.error && (
+                    <p className="mt-2 border-l-2 border-acid pl-3 text-xs leading-relaxed text-mute">
+                      {p.error}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+
+        {/* Connection matrix — honest about what each platform can do today */}
+        <h2 className="mt-12 font-display text-2xl font-semibold">Platform connections</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-mute">
+          Every platform only does what its API genuinely allows. No fake toggles.
+        </p>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {CONNECTIONS.map(({ name, Icon, note, phase, live }) => {
+            const isLiveLinkedIn = name === "LinkedIn";
+            return (
+              <div key={name} className="flex flex-col rounded-2xl border border-line bg-coal p-5">
+                <div className="flex items-center justify-between">
+                  <span className="grid h-9 w-9 place-items-center rounded-lg border border-line bg-soot">
+                    <Icon size={16} strokeWidth={1.75} />
+                  </span>
+                  <span
+                    className={`chip ${live || (isLiveLinkedIn && liAccount) ? "border-acid/40 text-acid" : "border-line bg-soot text-mute"}`}
+                  >
+                    {isLiveLinkedIn && liAccount ? "connected" : phase}
+                  </span>
+                </div>
+                <p className="mt-4 font-medium">{name}</p>
+                <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-mute">{note}</p>
+                {!isLiveLinkedIn && (
+                  <button
+                    disabled
+                    title="Goes live in a later phase — never a dead click"
+                    className="mt-4 cursor-not-allowed rounded-full border border-line bg-soot py-2.5 text-[13px] font-medium text-mute"
+                  >
+                    Connect — coming soon
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+      </main>
     </div>
   );
 }

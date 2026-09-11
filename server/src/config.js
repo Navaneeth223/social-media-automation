@@ -13,6 +13,15 @@ export const config = {
   // No secret, no boot — secrets live in env vars only (never in code).
   jwtSecret: required("JWT_SECRET"),
   clientOrigin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+  // Platform tokens are encrypted at rest with AES-256-GCM. Set ENCRYPTION_KEY
+  // to a 32-byte base64 key in production; in dev we derive one from JWT_SECRET.
+  encryptionKey: process.env.ENCRYPTION_KEY || "",
+  linkedin: {
+    clientId: process.env.LINKEDIN_CLIENT_ID || "",
+    clientSecret: process.env.LINKEDIN_CLIENT_SECRET || "",
+    redirectUri:
+      process.env.LINKEDIN_REDIRECT_URI || "http://localhost:8787/api/auth/linkedin/callback",
+  },
   isProd: process.env.NODE_ENV === "production",
   cookie: {
     name: "pulse_token",

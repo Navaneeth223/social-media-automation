@@ -5,6 +5,9 @@ import cookieParser from "cookie-parser";
 import mongoose from "mongoose";
 import { config } from "./config.js";
 import { authRouter } from "./routes/auth.js";
+import { oauthRouter } from "./routes/oauth.js";
+import { connectionsRouter } from "./routes/connections.js";
+import { postsRouter } from "./routes/posts.js";
 
 export function createApp() {
   const app = express();
@@ -31,6 +34,9 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRouter);
+  app.use("/api/auth", oauthRouter);
+  app.use("/api/connections", connectionsRouter);
+  app.use("/api/posts", postsRouter);
 
   app.use((req, res) => res.status(404).json({ error: "Not found" }));
 

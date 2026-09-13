@@ -20,12 +20,20 @@ import {
   isConfigured as instagramConfigured,
   IG_SCOPES,
 } from "../services/instagram.js";
+import {
+  authorizeUrl as tiktokAuthorize,
+  exchangeCode as tiktokExchange,
+  fetchUser as fetchTikTokUser,
+  isConfigured as tiktokConfigured,
+  TIKTOK_SCOPES,
+} from "../services/tiktok.js";
 
 export const oauthRouter = Router();
 
 const STATE_COOKIE = "li_oauth_state";
 const YT_STATE_COOKIE = "yt_oauth_state";
 const IG_STATE_COOKIE = "ig_oauth_state";
+const TT_STATE_COOKIE = "tt_oauth_state";
 
 function openState(res, cookieName) {
   const state = crypto.randomBytes(16).toString("hex");
@@ -183,6 +191,55 @@ oauthRouter.get("/instagram/callback", requireAuth, async (req, res, next) => {
     );
 
     return res.redirect(302, "/app?connected=instagram");
+  } catch (e) {
+    return next(e);
+  }
+});
+
+/* ——— TikTok (Phase 5) — sandbox-honest via Login Kit + Content Posting API ——— */
+
+oauthRouter.get("/tiktok", requireAuth, (req, res) => {
+  if (!tiktokConfigured()) {
+    return res.status(503).json({
+      error:
+        "TikTok isn't configured on this server yet — add TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET to server/.env, then restart the API.",
+    });
+  }
+  return res.redirect(302, tiktokAuthorize(openState(res, TT_STATE_COOKIE)));
+});
+
+oauthRouter.get("/tiktok/callback", requireAuth, async (req, res, next) => {
+  try {
+    const fail = (msg) => res.redirect(302, `/app?connected=tiktok&error=${encodeURIComponent(msg)}`);
+
+    const { code, state, error, error_description: errorDescription } = req.query;
+    if (error) return fail(errorDescription || error);
+    const savedState = req.cookies?.[TT_STATE_COOKIE];
+    res.clearCookie(TT_STATE_COOKIE, { path: "/" });
+    if (!code || !state || !savedState || state !== savedState) {
+      return fail("TikTok connect failed — state mismatch. Try again.");
+    }
+
+    const { accessToken, refreshToken, openId, expiresIn, scope } = await tiktokExchange(code);
+    const user = await fetchTikTokUser(accessToken);
+
+    await PlatformAccount.findOneAndUpdate(
+      { user: req.user._id, platform: "tiktok" },
+      {
+        $set: {
+          platformAccountId: openId || user.openId,
+          displayName: user.displayName,
+          accessTokenEnc: accessToken, // setter encrypts
+          refreshTokenEnc: refreshToken || "", // setter encrypts (lives ~1 year)
+          expiresAt: new Date(Date.now() + expiresIn * 1000),
+          scope: scope || TIKTOK_SCOPES.replace(/,/g, " "),
+          connectedAt: new Date(),
+        },
+      },
+      { upsert: true, setDefaultsOnInsert: true, new: true }
+    );
+
+    return res.redirect(302, "/app?connected=tiktok");
   } catch (e) {
     return next(e);
   }

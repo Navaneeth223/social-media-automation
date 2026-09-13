@@ -3,8 +3,17 @@ import { PlatformAccount } from "./models/PlatformAccount.js";
 import { publish as publishLinkedIn } from "./services/linkedin.js";
 import { publish as publishYouTube } from "./services/youtube.js";
 import { publish as publishInstagram } from "./services/instagram.js";
+import { publish as publishTikTok, pollPending as pollTikTok } from "./services/tiktok.js";
 
-const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube, instagram: publishInstagram };
+const PUBLISHERS = {
+  linkedin: publishLinkedIn,
+  youtube: publishYouTube,
+  instagram: publishInstagram,
+  tiktok: publishTikTok,
+};
+// TikTok is two-stage: init accepted → PROCESSING → inbox. Its posts get a
+// second-stage status poll on later ticks.
+const POLLERS = { tiktok: pollTikTok };
 
 /*
  * The scheduler. A Mongo-backed atomic-claim poller:
@@ -47,6 +56,15 @@ export async function processOnce() {
 
       const result = await PUBLISHERS[post.platform]({ account, post });
 
+      // Two-stage platforms (TikTok): the upload is ACCEPTED, not finished —
+      // keep "publishing" with the publish_id; the status poll finishes it.
+      if (result.pending) {
+        await Post.findByIdAndUpdate(post._id, {
+          $set: { publishedId: result.id, claimedAt: new Date() },
+        });
+        return post._id;
+      }
+
       await Post.findByIdAndUpdate(post._id, {
         $set: { status: "posted", publishedAt: new Date(), publishedId: result.id },
         $unset: { error: 1 },
@@ -60,20 +78,53 @@ export async function processOnce() {
   }
 
   // Crash recovery: a claim from a dead worker becomes a FAILED post, not a
-  // retry — verify-on-feed instead of risk double-posting.
+  // retry — verify-on-feed instead of risk double-posting. (TikTok posts with
+  // a publish_id are exempt — the upload already happened, they just poll.)
   const stale = await Post.findOneAndUpdate(
     {
       status: "publishing",
+      publishedId: null,
       claimedAt: { $lt: new Date(now.getTime() - CLAIM_GRACE_MS) },
     },
     {
       $set: {
         status: "failed",
         error:
-          "Publishing was interrupted by a worker restart. Check your LinkedIn feed — it may have posted before the restart.",
+          "Publishing was interrupted by a worker restart. Check your feed — it may have posted before the restart.",
       },
     }
   );
+
+  // TikTok accepted uploads are still processing — poll their real status.
+  const pendingTikTok = await Post.find({
+    platform: "tiktok",
+    status: "publishing",
+    publishedId: { $ne: null },
+  }).limit(10);
+
+  for (const post of pendingTikTok) {
+    try {
+      const account = await PlatformAccount.findOne({ user: post.user, platform: "tiktok" });
+      if (!account) throw new Error("TikTok account is no longer connected");
+      const s = await POLLERS.tiktok({ account, post });
+      if (s.status === "SEND_TO_USER_INBOX") {
+        await Post.findByIdAndUpdate(post._id, {
+          $set: { status: "posted", publishedAt: new Date() },
+          $unset: { error: 1 },
+        });
+      } else if (s.status === "FAILED" || s.status === "PUBLISH_FAILED") {
+        await Post.findByIdAndUpdate(post._id, {
+          $set: { status: "failed", error: s.failReason || "TikTok processing failed" },
+        });
+      } else {
+        // still PROCESSING — refresh the claim so stale-reclaim doesn't kill it
+        await Post.findByIdAndUpdate(post._id, { $set: { claimedAt: new Date() } });
+      }
+    } catch (e) {
+      await Post.findByIdAndUpdate(post._id, { $set: { error: e.message } });
+    }
+  }
+
   return stale?._id ?? null;
 }
 

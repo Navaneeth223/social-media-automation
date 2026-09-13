@@ -28,6 +28,15 @@ export const config = {
     redirectUri:
       process.env.INSTAGRAM_REDIRECT_URI || "http://localhost:8787/api/auth/instagram/callback",
   },
+  tiktok: {
+    clientKey: process.env.TIKTOK_CLIENT_KEY || "",
+    clientSecret: process.env.TIKTOK_CLIENT_SECRET || "",
+    redirectUri:
+      process.env.TIKTOK_REDIRECT_URI || "http://localhost:8787/api/auth/tiktok/callback",
+    // Sandbox-honest: SELF_ONLY (private to the uploader) is forced until the
+    // app passes TikTok's audit. Flip via env once approved.
+    privacyLevel: process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY",
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",

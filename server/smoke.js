@@ -119,6 +119,44 @@ globalThis.fetch = async (input, init) => {
   if (url.includes("/me/media")) {
     return json({ id: "ig-container-123" });
   }
+  /* Phase 5: TikTok (open.tiktokapis.com) stubs — token exchange/refresh,
+     user info, Direct Post init (PULL_FROM_URL), status fetch. */
+  if (url.includes("tiktokapis.com/oauth/token/")) {
+    const isRefresh = String(init?.body || "").includes("grant_type=refresh_token");
+    return json(
+      isRefresh
+        ? { access_token: "tt-fresh-token", refresh_token: "tt-refresh-2", expires_in: 86400 }
+        : {
+            access_token: "tt-access-token",
+            refresh_token: "tt-refresh-token",
+            open_id: "tt-open-123",
+            expires_in: 86400,
+            refresh_expires_in: 31536000,
+            scope: "user.info.basic video.publish video.upload",
+          }
+    );
+  }
+  if (url.includes("/user/info/")) {
+    return json({
+      data: { user: { open_id: "tt-open-123", display_name: "TikTok Demo" } },
+      error: { code: "ok", message: "" },
+    });
+  }
+  if (url.includes("/post/publish/video/init/")) {
+    try {
+      const body = JSON.parse(init?.body);
+      tiktokCapturedPrivacy = body?.post_info?.privacy_level || null;
+    } catch {
+      tiktokCapturedPrivacy = null;
+    }
+    return json({ data: { publish_id: "tt-publish-123" }, error: { code: "ok", message: "" } });
+  }
+  if (url.includes("/post/publish/status/fetch/")) {
+    return json({
+      data: { status: tiktokStatus, fail_reason: "video duration exceeds the limit" },
+      error: { code: "ok", message: "" },
+    });
+  }
   return realFetch(input, init);
 };
 

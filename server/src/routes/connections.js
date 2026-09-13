@@ -2,6 +2,7 @@ import { Router } from "express";
 import { isConfigured as linkedinConfigured } from "../services/linkedin.js";
 import { isConfigured as youtubeConfigured } from "../services/youtube.js";
 import { isConfigured as instagramConfigured } from "../services/instagram.js";
+import { isConfigured as tiktokConfigured } from "../services/tiktok.js";
 import { PlatformAccount } from "../models/PlatformAccount.js";
 import { requireAuth } from "../middleware/auth.js";
 
@@ -16,6 +17,7 @@ connectionsRouter.get("/", requireAuth, async (req, res, next) => {
         linkedin: linkedinConfigured(),
         youtube: youtubeConfigured(),
         instagram: instagramConfigured(),
+        tiktok: tiktokConfigured(),
       },
       connected: accounts.map((a) => ({
         platform: a.platform,

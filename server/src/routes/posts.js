@@ -6,17 +6,24 @@ import { PlatformAccount } from "../models/PlatformAccount.js";
 import { isConfigured as linkedinConfigured, publish as publishLinkedIn } from "../services/linkedin.js";
 import { isConfigured as youtubeConfigured, publish as publishYouTube } from "../services/youtube.js";
 import { isConfigured as instagramConfigured, publish as publishInstagram } from "../services/instagram.js";
+import { isConfigured as tiktokConfigured, publish as publishTikTok } from "../services/tiktok.js";
 
 export const postsRouter = Router();
 
-const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube, instagram: publishInstagram };
+const PUBLISHERS = {
+  linkedin: publishLinkedIn,
+  youtube: publishYouTube,
+  instagram: publishInstagram,
+  tiktok: publishTikTok,
+};
 const CONFIG_CHECKS = {
   linkedin: linkedinConfigured,
   youtube: youtubeConfigured,
   instagram: instagramConfigured,
+  tiktok: tiktokConfigured,
 };
-const LABELS = { linkedin: "LinkedIn", youtube: "YouTube", instagram: "Instagram" };
-const ENV_PREFIX = { linkedin: "LINKEDIN", youtube: "GOOGLE", instagram: "INSTAGRAM" };
+const LABELS = { linkedin: "LinkedIn", youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" };
+const ENV_PREFIX = { linkedin: "LINKEDIN", youtube: "GOOGLE", instagram: "INSTAGRAM", tiktok: "TIKTOK" };
 
 const sanitize = (p) => ({
   id: p._id.toString(),
@@ -35,7 +42,7 @@ const sanitize = (p) => ({
 });
 
 const baseSchema = z.object({
-  platform: z.enum(["linkedin", "youtube", "instagram"]).default("linkedin"),
+  platform: z.enum(["linkedin", "youtube", "instagram", "tiktok"]).default("linkedin"),
   scheduledFor: z.string().datetime().optional(),
   publishNow: z.boolean().optional(),
 });
@@ -53,6 +60,10 @@ const instagramSchema = z
     imageUrl: z.string().trim().url().optional(),
   })
   .refine((d) => d.videoUrl || d.imageUrl, { message: "A public media URL is required" });
+const tiktokSchema = z.object({
+  title: z.string().trim().min(1).max(2200), // TikTok caption/title field
+  videoUrl: z.string().trim().url(), // publicly reachable MP4 (PULL_FROM_URL)
+});
 
 postsRouter.post("/", requireAuth, async (req, res, next) => {
   try {
@@ -66,7 +77,9 @@ postsRouter.post("/", requireAuth, async (req, res, next) => {
         ? youtubeSchema.safeParse(req.body)
         : platform === "instagram"
           ? instagramSchema.safeParse(req.body)
-          : linkedinSchema.safeParse(req.body);
+          : platform === "tiktok"
+            ? tiktokSchema.safeParse(req.body)
+            : linkedinSchema.safeParse(req.body);
     if (!content.success) {
       return res.status(400).json({
         error:
@@ -74,7 +87,9 @@ postsRouter.post("/", requireAuth, async (req, res, next) => {
             ? "A title (1–100 chars) and a valid https video URL are required."
             : platform === "instagram"
               ? "A public media URL is required (a video URL for Reels or an image URL for a photo post)."
-              : "Write something (1–3000 characters) to post.",
+              : platform === "tiktok"
+                ? "A caption (1–2200 chars) and a valid https video URL are required."
+                : "Write something (1–3000 characters) to post.",
       });
     }
     const fields = content.data;

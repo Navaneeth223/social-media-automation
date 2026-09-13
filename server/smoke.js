@@ -12,17 +12,23 @@ process.env.LINKEDIN_CLIENT_ID = "test-client-id";
 process.env.LINKEDIN_CLIENT_SECRET = "test-client-secret";
 process.env.GOOGLE_CLIENT_ID = "test-google-id";
 process.env.GOOGLE_CLIENT_SECRET = "test-google-secret";
+process.env.INSTAGRAM_CLIENT_ID = "test-instagram-id";
+process.env.INSTAGRAM_CLIENT_SECRET = "test-instagram-secret";
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
 let failures = 0;
+const results = [];
 const step = async (name, fn) => {
   try {
     await fn();
+    results.push(`PASS ${name}`);
     console.log("  ✓", name);
   } catch (e) {
     failures++;
+    results.push(`FAIL ${name} — ${e.message}`);
     console.error("  ✗", name, "\n     ", e.message);
   }
 };
@@ -89,6 +95,29 @@ globalThis.fetch = async (input, init) => {
       status: 200,
       headers: { "Content-Type": "video/mp4", "Content-Length": "16" },
     });
+  }
+  /* Phase 4: Instagram (graph.instagram.com) stubs — token exchange, long-lived
+     exchange/refresh, identity, container creation + status, publish. */
+  if (url.includes("graph.instagram.com/oauth/access_token")) {
+    return json({ access_token: "ig-short-token" });
+  }
+  if (url.includes("refresh_access_token")) {
+    return json({ access_token: "ig-refreshed-token", expires_in: 5184000 });
+  }
+  if (url.includes("graph.instagram.com/access_token")) {
+    return json({ access_token: "ig-long-token", expires_in: 5184000 });
+  }
+  if (url.includes("/me?fields=user_id")) {
+    return json({ user_id: "ig-user-123", username: "loopwear.studio", account_type: "BUSINESS" });
+  }
+  if (url.includes("/me/media_publish")) {
+    return json({ id: "ig-post-123" });
+  }
+  if (url.includes("status_code")) {
+    return json({ status_code: "FINISHED" });
+  }
+  if (url.includes("/me/media")) {
+    return json({ id: "ig-container-123" });
   }
   return realFetch(input, init);
 };
@@ -498,6 +527,123 @@ try {
     });
     assert.equal(yt.status, 400);
     assert.ok(yt.data.error.includes("Connect YouTube"), yt.data.error);
+    const ig = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({
+        platform: "instagram",
+        text: "test",
+        imageUrl: "https://example.com/photo.jpg",
+        publishNow: true,
+      }),
+    });
+    assert.equal(ig.status, 400);
+    assert.ok(ig.data.error.includes("Connect Instagram"), ig.data.error);
+  });
+
+  await step("Instagram OAuth: authorize → callback stores an ENCRYPTED 60-day token", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const auth = await fetch(`${base}/api/auth/instagram`, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    assert.equal(auth.status, 302, "authorize redirects to Instagram");
+    const loc = auth.headers.get("location");
+    assert.ok(loc.includes("instagram.com/oauth/authorize"), loc);
+    const params = new URL(loc).searchParams;
+    assert.ok(
+      params.get("scope").includes("instagram_business_content_publish"),
+      "publish scope requested"
+    );
+    const stateUrl = params.get("state");
+    const igCookie = auth
+      .headers.getSetCookie()
+      .find((c) => c.startsWith("ig_oauth_state="))
+      ?.split(";")[0];
+    assert.ok(stateUrl && igCookie, "state param + CSRF cookie set");
+
+    const cb = await fetch(`${base}/api/auth/instagram/callback?code=fake-code&state=${stateUrl}`, {
+      headers: { Cookie: `${cookie}; ${igCookie}` },
+      redirect: "manual",
+    });
+    assert.ok(
+      cb.headers.get("location").startsWith("/app?connected=instagram"),
+      cb.headers.get("location")
+    );
+
+    const conns = await j("/api/connections", { headers: { Cookie: cookie } });
+    const ig = conns.data.connected.find((c) => c.platform === "instagram");
+    assert.equal(ig.displayName, "loopwear.studio", "username stored");
+
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    const { decrypt } = await import("./src/services/crypto.js");
+    const acct = await PlatformAccount.findOne({ platform: "instagram" });
+    assert.ok(!JSON.stringify(acct.toObject()).includes("ig-long-token"), "token encrypted at rest");
+    assert.equal(decrypt(acct.accessTokenEnc), "ig-long-token", "long-lived token round-trips");
+    assert.ok(
+      new Date(acct.expiresAt) > new Date(Date.now() + 50 * 24 * 3600 * 1000),
+      "~60-day token stored"
+    );
+  });
+
+  await step("Instagram post now → container → publish stores the real media id", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookieOf(login) },
+      body: JSON.stringify({
+        platform: "instagram",
+        text: "New drop — caption by Pulse",
+        videoUrl: "https://example.com/demo-video.mp4",
+        publishNow: true,
+      }),
+    });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.post.status, "posted");
+    assert.equal(r.data.post.publishedId, "ig-post-123");
+  });
+
+  await step("Instagram scheduled media auto-REFRESHES the long-lived token", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    // Simulate a token that expired a day after connecting.
+    await PlatformAccount.findOneAndUpdate(
+      { platform: "instagram" },
+      { $set: { expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
+    );
+    const r = await j("/api/posts", {
+      method: "POST",
+      headers: { Cookie: cookie },
+      body: JSON.stringify({
+        platform: "instagram",
+        text: "scheduled photo",
+        imageUrl: "https://example.com/photo.jpg",
+        scheduledFor: new Date(Date.now() - 1000).toISOString(),
+      }),
+    });
+    assert.equal(r.status, 201);
+    const { processOnce } = await import("./src/worker.js");
+    assert.ok(await processOnce(), "worker claimed the instagram post");
+
+    const list = await j("/api/posts", { headers: { Cookie: cookie } });
+    const p = list.data.posts.find((x) => x.text === "scheduled photo");
+    assert.equal(p.status, "posted");
+    assert.equal(p.publishedId, "ig-post-123");
+
+    const acct = await PlatformAccount.findOne({ platform: "instagram" });
+    const { decrypt } = await import("./src/services/crypto.js");
+    assert.equal(decrypt(acct.accessTokenEnc), "ig-refreshed-token", "token refreshed + re-encrypted");
   });
 } finally {
   server.close();
@@ -510,4 +656,7 @@ console.log(
     ? `\n${failures} check(s) failed — fix before calling Phase 1 done.`
     : "\nAll Phase 1 checks passed — register → session → me → logout on the real app."
 );
+
+// Machine-readable summary — console encoding mangles ✓/✗ on Windows.
+fs.writeFileSync("smoke-summary.txt", `failures=${failures}\n${results.join("\n")}\n`);
 process.exit(failures ? 1 : 0);

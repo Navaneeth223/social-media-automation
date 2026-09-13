@@ -37,7 +37,7 @@ import { PRODUCT } from "../lib/config";
 const CONNECTIONS = [
   { name: "LinkedIn", Icon: Linkedin, phase: "Live", live: true, note: "Publishes to your own feed — free tier, no app review needed." },
   { name: "YouTube", Icon: Youtube, phase: "Live", live: true, note: "Resumable uploads via Data API v3 to your own channel. Unverified apps upload as private." },
-  { name: "Instagram", Icon: Instagram, phase: "Phase 4", live: false, note: "Meta Graph API — works for accounts added as testers first." },
+  { name: "Instagram", Icon: Instagram, phase: "Live", live: true, note: "Container-based publishing (Reels or photos) via the Meta app. Testers-only until Meta reviews the app." },
   { name: "TikTok", Icon: Music2, phase: "Phase 5", live: false, note: "Posts stay private until TikTok audits the app. We'll say so in the UI." },
   { name: "X (Twitter)", Icon: Twitter, phase: "No API", live: false, note: "No free API tier exists — a copy-to-clipboard helper is planned instead." },
   { name: "Threads", Icon: AtSign, phase: "Phase 4+", live: false, note: "Rides the same Meta app as Instagram." },
@@ -61,6 +61,9 @@ export default function Dashboard() {
   const [ytUrl, setYtUrl] = useState("");
   const [ytDesc, setYtDesc] = useState("");
   const [ytPrivacy, setYtPrivacy] = useState("private");
+  const [igCaption, setIgCaption] = useState("");
+  const [igMedia, setIgMedia] = useState("");
+  const [igType, setIgType] = useState("reel"); // reel (video) | photo (image)
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const navigate = useNavigate();
@@ -70,6 +73,8 @@ export default function Dashboard() {
   const liConfigured = connections?.configured.linkedin ?? false;
   const ytAccount = connections?.connected.find((c) => c.platform === "youtube") || null;
   const ytConfigured = connections?.configured.youtube ?? false;
+  const igAccount = connections?.connected.find((c) => c.platform === "instagram") || null;
+  const igConfigured = connections?.configured.instagram ?? false;
   const scheduledCount = posts.filter((p) => p.status === "scheduled").length;
 
   const load = useCallback(async () => {
@@ -126,6 +131,16 @@ export default function Dashboard() {
         description: ytDesc.trim(),
         privacyStatus: ytPrivacy,
       };
+    } else if (tab === "instagram") {
+      if (!igMedia.trim()) {
+        setNotice({ error: "A public media URL is required (Reel video or photo)." });
+        return;
+      }
+      payload = {
+        platform: "instagram",
+        text: igCaption.trim(),
+        ...(igType === "reel" ? { videoUrl: igMedia.trim() } : { imageUrl: igMedia.trim() }),
+      };
     } else {
       if (!text.trim()) return;
       payload = { platform: "linkedin", text: text.trim() };
@@ -151,7 +166,9 @@ export default function Dashboard() {
                 ok:
                   tab === "youtube"
                     ? "Video uploaded to YouTube ✓ — private until you publish it there."
-                    : "Posted to LinkedIn ✓",
+                    : tab === "instagram"
+                      ? "Published to Instagram ✓"
+                      : "Posted to LinkedIn ✓",
               }
             : { error: r.post.error || "The platform refused the post — see the queue for the real error." }
         );
@@ -162,6 +179,8 @@ export default function Dashboard() {
       setYtTitle("");
       setYtUrl("");
       setYtDesc("");
+      setIgCaption("");
+      setIgMedia("");
       setWhen("");
     } catch (e) {
       setNotice({ error: e.message });
@@ -367,12 +386,59 @@ export default function Dashboard() {
         )}
 
 
+        {/* Instagram connection — the Phase 4 platform */}
+        <div className="mt-4 flex flex-col justify-between gap-4 rounded-2xl border border-line bg-coal p-6 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-line bg-soot">
+              <Instagram size={19} strokeWidth={1.75} />
+            </span>
+            <div>
+              <p className="font-medium">Instagram</p>
+              <p className="text-[13px] text-mute">
+                {igAccount
+                  ? `Connected as @${igAccount.displayName} — Reels and photos to your feed.`
+                  : "Connect a Professional account added as a Tester in your Meta app. Development mode is testers-only."}
+              </p>
+            </div>
+          </div>
+          {igAccount ? (
+            <button
+              onClick={() => handleDisconnect("instagram")}
+              className="shrink-0 rounded-full border border-line px-5 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid"
+            >
+              Disconnect
+            </button>
+          ) : igConfigured ? (
+            <a
+              href="/api/auth/instagram"
+              className="shrink-0 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink"
+            >
+              Connect Instagram
+            </a>
+          ) : (
+            <span className="shrink-0 rounded-full border border-line bg-soot px-5 py-2.5 text-[13px] font-medium text-mute">
+              Not configured on this server
+            </span>
+          )}
+        </div>
+        {!igConfigured && !igAccount && (
+          <p className="mt-2 text-xs leading-relaxed text-mute">
+            To go live: developers.facebook.com → Create app → use case
+            <span className="text-paper/80"> "Instagram API with Instagram Login"</span> → add your
+            Professional account under <span className="text-paper/80">Instagram Testers</span> →
+            copy App ID / Secret into server/.env (redirect:
+            <code className="mx-1 text-paper/80">http://localhost:8787/api/auth/instagram/callback</code>).
+            Testers-only until Meta reviews the app.
+          </p>
+        )}
+
         {/* Composer — per-platform */}
         <div className="mt-8 rounded-2xl border border-line bg-coal p-6">
           <div className="flex items-center gap-2">
             {[
               { id: "linkedin", label: "LinkedIn" },
               { id: "youtube", label: "YouTube" },
+              { id: "instagram", label: "Instagram" },
             ].map((t) => (
               <button
                 key={t.id}
@@ -426,6 +492,46 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
+          ) : tab === "instagram" ? (
+            <div className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {[
+                    { id: "reel", label: "Reel (video)" },
+                    { id: "photo", label: "Photo" },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setIgType(t.id)}
+                      className={`rounded-full px-4 py-1.5 text-[12px] font-medium transition-colors ${
+                        igType === t.id ? "bg-acid text-ink" : "border border-line text-mute hover:text-paper"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-mute">max caption 2,200 characters</span>
+              </div>
+              <input
+                value={igMedia}
+                onChange={(e) => setIgMedia(e.target.value)}
+                placeholder={
+                  igType === "reel"
+                    ? "Public video URL — e.g. https://res.cloudinary.com/…/reel.mp4"
+                    : "Public image URL — e.g. https://res.cloudinary.com/…/photo.jpg"
+                }
+                className="w-full rounded-xl border border-line bg-soot px-4 py-3 text-sm text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+              />
+              <textarea
+                value={igCaption}
+                onChange={(e) => setIgCaption(e.target.value)}
+                rows={3}
+                maxLength={2200}
+                placeholder="Caption (optional)"
+                className="w-full resize-none rounded-xl border border-line bg-soot px-4 py-3 text-sm leading-relaxed text-paper outline-none transition-colors placeholder:text-mute/60 focus:border-acid/60"
+              />
+            </div>
           ) : (
             <textarea
               value={text}
@@ -442,14 +548,20 @@ export default function Dashboard() {
               onClick={() => handleCreate(true)}
               disabled={
                 busy ||
-                (tab === "linkedin" ? !text.trim() || !liAccount : !ytTitle.trim() || !ytUrl.trim() || !ytAccount)
+                (tab === "linkedin"
+                  ? !text.trim() || !liAccount
+                  : tab === "youtube"
+                    ? !ytTitle.trim() || !ytUrl.trim() || !ytAccount
+                    : !igMedia.trim() || !igAccount)
               }
               title={
                 tab === "youtube" && !ytAccount
                   ? "Connect YouTube to upload instantly"
                   : tab === "linkedin" && !liAccount
                     ? "Connect LinkedIn to post instantly"
-                    : undefined
+                    : tab === "instagram" && !igAccount
+                      ? "Connect Instagram to publish instantly"
+                      : undefined
               }
               className="flex items-center gap-2 rounded-full bg-acid px-5 py-2.5 text-[13px] font-semibold text-ink transition-transform duration-300 hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
             >
@@ -464,7 +576,7 @@ export default function Dashboard() {
               />
               <button
                 onClick={() => handleCreate(false)}
-                disabled={busy || (tab === "linkedin" ? !text.trim() : !ytTitle.trim() || !ytUrl.trim()) || !when}
+                disabled={busy || (tab === "linkedin" ? !text.trim() : tab === "youtube" ? !ytTitle.trim() || !ytUrl.trim() : !igMedia.trim()) || !when}
                 title="Schedules the post — Pulse publishes it automatically"
                 className="flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-[13px] font-medium transition-colors hover:border-acid/60 hover:text-acid disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -540,7 +652,9 @@ export default function Dashboard() {
           {CONNECTIONS.map(({ name, Icon, note, phase, live }) => {
             const isLinkedIn = name === "LinkedIn";
             const isYouTube = name === "YouTube";
-            const isConnected = (isLinkedIn && liAccount) || (isYouTube && ytAccount);
+            const isInstagram = name === "Instagram";
+            const isConnected =
+              (isLinkedIn && liAccount) || (isYouTube && ytAccount) || (isInstagram && igAccount);
             return (
               <div key={name} className="flex flex-col rounded-2xl border border-line bg-coal p-5">
                 <div className="flex items-center justify-between">
@@ -555,7 +669,7 @@ export default function Dashboard() {
                 </div>
                 <p className="mt-4 font-medium">{name}</p>
                 <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-mute">{note}</p>
-                {!isLinkedIn && !isYouTube && (
+                {!isLinkedIn && !isYouTube && !isInstagram && (
                   <button
                     disabled
                     title="Goes live in a later phase — never a dead click"

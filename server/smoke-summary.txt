@@ -1,0 +1,26 @@
+failures=0
+PASS health reports db up
+PASS register creates a real trial user + httpOnly session
+PASS register rejects short passwords (400)
+PASS register rejects duplicate emails (409)
+PASS login with wrong password → generic 401
+PASS login with right password → 200 + cookie
+PASS /me returns the signed-in user (cookie auth)
+PASS /me also accepts Bearer tokens
+PASS /me without a session → 401
+PASS logout clears the session for good
+PASS logout revokes every session, not just the cookie
+PASS platform tokens encrypt at rest and round-trip
+PASS OAuth flow: authorize → callback stores an ENCRYPTED token
+PASS post now → real publish path (stubbed API) stores the platform id
+PASS scheduled post publishes EXACTLY once (worker idempotency)
+PASS worker restart mid-publish FAILS honestly instead of double-posting
+PASS posts API: list + delete rules
+PASS YouTube OAuth: authorize → callback stores ENCRYPTED access + refresh tokens
+PASS YouTube post now → resumable upload stores the real video id
+PASS YouTube validation: title + video URL required (400)
+PASS YouTube scheduled upload auto-REFRESHES the expired access token
+PASS publish-now without a connected platform → honest 400
+PASS Instagram OAuth: authorize → callback stores an ENCRYPTED 60-day token
+PASS Instagram post now → container → publish stores the real media id
+PASS Instagram scheduled media auto-REFRESHES the long-lived token

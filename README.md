@@ -199,6 +199,28 @@ Same real pipeline as LinkedIn, extended for video: **Google OAuth (offline acce
 
 ---
 
+## Phase 4 — Instagram, sandbox-honest
+
+The container-based publish flow via **Instagram API with Instagram Login**: **OAuth connect → 60-day token encrypted at rest → composer (Reel or photo) → container → auto-refresh → real publish.**
+
+- **Connect:** `/app` → "Connect Instagram" → Instagram consent → callback exchanges the short-lived token for a **60-day long-lived token** (encrypted) and stores the account identity.
+- **Composer:** Instagram tab → pick **Reel (video)** or **Photo** → public media URL (Cloudinary free tier) → caption (2,200 chars). **Publish now** runs the container flow for real; **Schedule** lets the worker do it.
+- **Honesty baked in:** Development mode is **testers-only** — your Instagram Professional account must be added as a Tester in your Meta app; arbitrary third-party users need Meta App Review. The UI states this. The worker also waits for Meta to finish processing containers (Reels) before publishing, and every failure shows Meta's REAL error text.
+- **Token lifecycle:** long-lived tokens refresh automatically a day before expiry (same pattern as Phase 3).
+
+### Make it live with your credentials (10 minutes, free)
+
+1. [developers.facebook.com](https://developers.facebook.com) → Create app → use case **"Instagram API with Instagram Login"**.
+2. Under **Instagram Testers**, add your Instagram **Professional** account (Business/Creator).
+3. App settings → copy the **App ID** and **App Secret** into `server/.env` (`INSTAGRAM_CLIENT_ID` / `INSTAGRAM_CLIENT_SECRET`) → restart `npm run dev`.
+4. On `/app`, hit **Connect Instagram** → approve → publish Reels or photos for real.
+
+### Phase 4 verification
+
+`cd server && npm run smoke` — 25 checks, adding: Instagram OAuth flow with encrypted 60-day token + username storage, the full container → publish path (stubbed Meta endpoints), long-lived token auto-refresh on expiry, honest 400s without a connection, and caption/media validation.
+
+---
+
 ## Local demo mode — everything on this computer (no cloud, no cost)
 
 ```bash

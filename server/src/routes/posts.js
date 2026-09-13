@@ -5,12 +5,18 @@ import { Post } from "../models/Post.js";
 import { PlatformAccount } from "../models/PlatformAccount.js";
 import { isConfigured as linkedinConfigured, publish as publishLinkedIn } from "../services/linkedin.js";
 import { isConfigured as youtubeConfigured, publish as publishYouTube } from "../services/youtube.js";
+import { isConfigured as instagramConfigured, publish as publishInstagram } from "../services/instagram.js";
 
 export const postsRouter = Router();
 
-const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube };
-const CONFIG_CHECKS = { linkedin: linkedinConfigured, youtube: youtubeConfigured };
-const LABELS = { linkedin: "LinkedIn", youtube: "YouTube" };
+const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube, instagram: publishInstagram };
+const CONFIG_CHECKS = {
+  linkedin: linkedinConfigured,
+  youtube: youtubeConfigured,
+  instagram: instagramConfigured,
+};
+const LABELS = { linkedin: "LinkedIn", youtube: "YouTube", instagram: "Instagram" };
+const ENV_PREFIX = { linkedin: "LINKEDIN", youtube: "GOOGLE", instagram: "INSTAGRAM" };
 
 const sanitize = (p) => ({
   id: p._id.toString(),
@@ -29,7 +35,7 @@ const sanitize = (p) => ({
 });
 
 const baseSchema = z.object({
-  platform: z.enum(["linkedin", "youtube"]).default("linkedin"),
+  platform: z.enum(["linkedin", "youtube", "instagram"]).default("linkedin"),
   scheduledFor: z.string().datetime().optional(),
   publishNow: z.boolean().optional(),
 });
@@ -40,6 +46,13 @@ const youtubeSchema = z.object({
   description: z.string().trim().max(5000).optional().default(""),
   privacyStatus: z.enum(["private", "unlisted", "public"]).optional().default("private"),
 });
+const instagramSchema = z
+  .object({
+    text: z.string().trim().max(2200).optional().default(""),
+    videoUrl: z.string().trim().url().optional(),
+    imageUrl: z.string().trim().url().optional(),
+  })
+  .refine((d) => d.videoUrl || d.imageUrl, { message: "A public media URL is required" });
 
 postsRouter.post("/", requireAuth, async (req, res, next) => {
   try {
@@ -51,13 +64,17 @@ postsRouter.post("/", requireAuth, async (req, res, next) => {
     const content =
       platform === "youtube"
         ? youtubeSchema.safeParse(req.body)
-        : linkedinSchema.safeParse(req.body);
+        : platform === "instagram"
+          ? instagramSchema.safeParse(req.body)
+          : linkedinSchema.safeParse(req.body);
     if (!content.success) {
       return res.status(400).json({
         error:
           platform === "youtube"
             ? "A title (1–100 chars) and a valid https video URL are required."
-            : "Write something (1–3000 characters) to post.",
+            : platform === "instagram"
+              ? "A public media URL is required (a video URL for Reels or an image URL for a photo post)."
+              : "Write something (1–3000 characters) to post.",
       });
     }
     const fields = content.data;
@@ -66,7 +83,7 @@ postsRouter.post("/", requireAuth, async (req, res, next) => {
     if (base.data.publishNow) {
       if (!CONFIG_CHECKS[platform]()) {
         return res.status(400).json({
-          error: `${LABELS[platform]} isn't configured on this server — add the ${platform === "youtube" ? "GOOGLE" : "LINKEDIN"}_CLIENT_ID / CLIENT_SECRET to server/.env and restart the API.`,
+          error: `${LABELS[platform]} isn't configured on this server — add the ${ENV_PREFIX[platform]}_CLIENT_ID / CLIENT_SECRET to server/.env and restart the API.`,
         });
       }
       const account = await PlatformAccount.findOne({ user: req.user._id, platform }).sort({

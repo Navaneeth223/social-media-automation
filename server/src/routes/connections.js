@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { isConfigured as linkedinConfigured } from "../services/linkedin.js";
 import { isConfigured as youtubeConfigured } from "../services/youtube.js";
+import { isConfigured as instagramConfigured } from "../services/instagram.js";
 import { PlatformAccount } from "../models/PlatformAccount.js";
 import { requireAuth } from "../middleware/auth.js";
 
@@ -11,7 +12,11 @@ connectionsRouter.get("/", requireAuth, async (req, res, next) => {
   try {
     const accounts = await PlatformAccount.find({ user: req.user._id }).sort({ connectedAt: -1 });
     res.json({
-      configured: { linkedin: linkedinConfigured(), youtube: youtubeConfigured() },
+      configured: {
+        linkedin: linkedinConfigured(),
+        youtube: youtubeConfigured(),
+        instagram: instagramConfigured(),
+      },
       connected: accounts.map((a) => ({
         platform: a.platform,
         displayName: a.displayName,

@@ -2,8 +2,9 @@ import { Post } from "./models/Post.js";
 import { PlatformAccount } from "./models/PlatformAccount.js";
 import { publish as publishLinkedIn } from "./services/linkedin.js";
 import { publish as publishYouTube } from "./services/youtube.js";
+import { publish as publishInstagram } from "./services/instagram.js";
 
-const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube };
+const PUBLISHERS = { linkedin: publishLinkedIn, youtube: publishYouTube, instagram: publishInstagram };
 
 /*
  * The scheduler. A Mongo-backed atomic-claim poller:
@@ -38,7 +39,11 @@ export async function processOnce() {
         user: post.user,
         platform: post.platform,
       }).sort({ connectedAt: -1 });
-      if (!account) throw new Error(`${post.platform === "youtube" ? "YouTube channel" : "LinkedIn account"} is no longer connected`);
+      if (!account) throw new Error(`${
+        { youtube: "YouTube channel", instagram: "Instagram account", linkedin: "LinkedIn account" }[
+          post.platform
+        ] || "Platform account"
+      } is no longer connected`);
 
       const result = await PUBLISHERS[post.platform]({ account, post });
 

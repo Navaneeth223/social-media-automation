@@ -138,3 +138,53 @@ oauthRouter.get("/youtube/callback", requireAuth, async (req, res, next) => {
   }
 });
 
+/* ——— Instagram (Phase 4) — sandbox-honest via Instagram Login ——— */
+
+oauthRouter.get("/instagram", requireAuth, (req, res) => {
+  if (!instagramConfigured()) {
+    return res.status(503).json({
+      error:
+        "Instagram isn't configured on this server yet — add INSTAGRAM_CLIENT_ID and INSTAGRAM_CLIENT_SECRET to server/.env, then restart the API.",
+    });
+  }
+  return res.redirect(302, instagramAuthorize(openState(res, IG_STATE_COOKIE)));
+});
+
+oauthRouter.get("/instagram/callback", requireAuth, async (req, res, next) => {
+  try {
+    const fail = (msg) => res.redirect(302, `/app?connected=instagram&error=${encodeURIComponent(msg)}`);
+
+    const { code, state, error, error_description: errorDescription } = req.query;
+    if (error) return fail(errorDescription || error);
+    const savedState = req.cookies?.[IG_STATE_COOKIE];
+    res.clearCookie(IG_STATE_COOKIE, { path: "/" });
+    if (!code || !state || !savedState || state !== savedState) {
+      return fail("Instagram connect failed — state mismatch. Try again.");
+    }
+
+    // short-lived (~1h) → 60-day long-lived token, encrypted at rest
+    const { accessToken: shortToken } = await instagramExchange(code);
+    const { accessToken, expiresIn } = await exchangeLongLived(shortToken);
+    const account = await fetchInstagramAccount(accessToken);
+
+    await PlatformAccount.findOneAndUpdate(
+      { user: req.user._id, platform: "instagram" },
+      {
+        $set: {
+          platformAccountId: account.userId,
+          displayName: account.username,
+          accessTokenEnc: accessToken, // setter encrypts
+          expiresAt: new Date(Date.now() + expiresIn * 1000),
+          scope: IG_SCOPES.replace(/,/g, " "),
+          connectedAt: new Date(),
+        },
+      },
+      { upsert: true, setDefaultsOnInsert: true, new: true }
+    );
+
+    return res.redirect(302, "/app?connected=instagram");
+  } catch (e) {
+    return next(e);
+  }
+});
+

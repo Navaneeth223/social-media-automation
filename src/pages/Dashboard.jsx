@@ -170,7 +170,14 @@ export default function Dashboard() {
                       ? "Published to Instagram ✓"
                       : "Posted to LinkedIn ✓",
               }
-            : { error: r.post.error || "The platform refused the post — see the queue for the real error." }
+            : r.post.status === "publishing"
+              ? {
+                  ok:
+                    tab === "tiktok"
+                      ? "Accepted by TikTok — processing now. It lands in your TikTok inbox as private until the app passes audit."
+                      : "Accepted — processing now. Watch the queue.",
+                }
+              : { error: r.post.error || "The platform refused the post — see the queue for the real error." }
         );
       } else {
         setNotice({ ok: "Scheduled ✓ — Pulse publishes it at the right moment." });

@@ -14,6 +14,8 @@ process.env.GOOGLE_CLIENT_ID = "test-google-id";
 process.env.GOOGLE_CLIENT_SECRET = "test-google-secret";
 process.env.INSTAGRAM_CLIENT_ID = "test-instagram-id";
 process.env.INSTAGRAM_CLIENT_SECRET = "test-instagram-secret";
+process.env.TIKTOK_CLIENT_KEY = "test-tiktok-key";
+process.env.TIKTOK_CLIENT_SECRET = "test-tiktok-secret";
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -49,6 +51,9 @@ const base = `http://127.0.0.1:${server.address().port}`;
 /* Phase 2: intercept LinkedIn endpoints so the REAL service code (token
    exchange, userinfo, /rest/posts) runs end-to-end without live credentials. */
 const realFetch = globalThis.fetch;
+// TikTok stub state — module scope so tests can read what the handler captured.
+let tiktokStatus = "SEND_TO_USER_INBOX"; // flip to "FAILED" to test failure surfacing
+let tiktokCapturedPrivacy = null;
 globalThis.fetch = async (input, init) => {
   const url = String(input instanceof Request ? input.url : input);
   const json = (obj, status = 200) =>
@@ -121,7 +126,7 @@ globalThis.fetch = async (input, init) => {
   }
   /* Phase 5: TikTok (open.tiktokapis.com) stubs — token exchange/refresh,
      user info, Direct Post init (PULL_FROM_URL), status fetch. */
-  if (url.includes("tiktokapis.com/oauth/token/")) {
+  if (url.includes("/oauth/token/")) {
     const isRefresh = String(init?.body || "").includes("grant_type=refresh_token");
     return json(
       isRefresh
@@ -682,6 +687,128 @@ try {
     const acct = await PlatformAccount.findOne({ platform: "instagram" });
     const { decrypt } = await import("./src/services/crypto.js");
     assert.equal(decrypt(acct.accessTokenEnc), "ig-refreshed-token", "token refreshed + re-encrypted");
+  });
+
+  await step("TikTok OAuth: authorize → callback stores ENCRYPTED access + refresh tokens", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const auth = await fetch(`${base}/api/auth/tiktok`, {
+      headers: { Cookie: cookie },
+      redirect: "manual",
+    });
+    console.log(
+      "[dbg authorize]",
+      auth.status,
+      JSON.stringify([...auth.headers]),
+      (await auth.text()).slice(0, 150)
+    );
+    assert.equal(auth.status, 302, "authorize redirects to TikTok");
+    const loc = auth.headers.get("location");
+    assert.ok(loc.includes("tiktok.com/v2/auth/authorize"), loc);
+    const params = new URL(loc).searchParams;
+    assert.ok(params.get("scope").includes("video.publish"), "publish scope requested");
+    assert.ok(params.get("client_key"), "client_key used (TikTok uses client_key, not client_id)");
+    const ttState = params.get("state");
+    const ttCookie = auth
+      .headers.getSetCookie()
+      .find((c) => c.startsWith("tt_oauth_state="))
+      ?.split(";")[0];
+    assert.ok(ttState && ttCookie, "state param + CSRF cookie set");
+
+    const cb = await fetch(`${base}/api/auth/tiktok/callback?code=fake-code&state=${ttState}`, {
+      headers: { Cookie: `${cookie}; ${ttCookie}` },
+      redirect: "manual",
+    });
+    console.log(
+      "[dbg callback]",
+      cb.status,
+      cb.headers.get("location"),
+      (await cb.text()).slice(0, 250)
+    );
+    assert.ok(
+      cb.headers.get("location").startsWith("/app?connected=tiktok"),
+      cb.headers.get("location")
+    );
+
+    const { PlatformAccount } = await import("./src/models/PlatformAccount.js");
+    const { decrypt } = await import("./src/services/crypto.js");
+    const acct = await PlatformAccount.findOne({ platform: "tiktok" });
+    assert.equal(acct.platformAccountId, "tt-open-123", "open_id stored");
+    assert.equal(acct.displayName, "TikTok Demo");
+    assert.ok(!JSON.stringify(acct.toObject()).includes("tt-access-token"), "access token encrypted");
+    assert.ok(!JSON.stringify(acct.toObject()).includes("tt-refresh-token"), "refresh token encrypted");
+    assert.equal(decrypt(acct.accessTokenEnc), "tt-access-token");
+    assert.equal(decrypt(acct.refreshTokenEnc), "tt-refresh-token");
+  });
+
+  await step(
+    "TikTok post now → PULL_FROM_URL accepted, SELF_ONLY forced, status publishing",
+    async () => {
+      const login = await j("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+      });
+      const r = await j("/api/posts", {
+        method: "POST",
+        headers: { Cookie: cookieOf(login) },
+        body: JSON.stringify({
+          platform: "tiktok",
+          title: "Sandbox upload — caption by Pulse",
+          videoUrl: "https://example.com/demo-video.mp4",
+          publishNow: true,
+        }),
+      });
+      assert.equal(r.status, 201);
+      assert.equal(r.data.post.status, "publishing", "two-stage: TikTok is processing");
+      assert.equal(r.data.post.publishedId, "tt-publish-123");
+      assert.equal(tiktokCapturedPrivacy, "SELF_ONLY", "privacy FORCED to SELF_ONLY until audit");
+    }
+  );
+
+  await step("TikTok status poll lands the post: publishing → posted", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const cookie = cookieOf(login);
+    const { processOnce } = await import("./src/worker.js");
+    await processOnce(); // poll branch: tiktok status = SEND_TO_USER_INBOX
+    const list = await j("/api/posts", { headers: { Cookie: cookie } });
+    const posted = list.data.posts.find((p) => p.publishedId === "tt-publish-123");
+    assert.equal(posted.status, "posted", "delivered to the TikTok inbox");
+  });
+
+  await step("TikTok FAILED status surfaces the REAL fail_reason", async () => {
+    tiktokStatus = "FAILED";
+    try {
+      const login = await j("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+      });
+      const r = await j("/api/posts", {
+        method: "POST",
+        headers: { Cookie: cookieOf(login) },
+        body: JSON.stringify({
+          platform: "tiktok",
+          title: "this one will fail",
+          videoUrl: "https://example.com/demo-video.mp4",
+          publishNow: true,
+        }),
+      });
+      assert.equal(r.status, 201);
+      assert.equal(r.data.post.status, "publishing", "accepted first");
+      const { processOnce } = await import("./src/worker.js");
+      await processOnce(); // poll: FAILED
+      const list = await j("/api/posts", { headers: { Cookie: cookieOf(login) } });
+      const failed = list.data.posts.find((p) => p.title === "this one will fail");
+      assert.equal(failed.status, "failed");
+      assert.equal(failed.error, "video duration exceeds the limit", "real TikTok reason shown");
+    } finally {
+      tiktokStatus = "SEND_TO_USER_INBOX";
+    }
   });
 } finally {
   server.close();

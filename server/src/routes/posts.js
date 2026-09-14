@@ -118,9 +118,15 @@ postsRouter.post("/", requireAuth, async (req, res, next) => {
       });
       try {
         const result = await PUBLISHERS[platform]({ account, post });
-        post.status = "posted";
-        post.publishedAt = new Date();
-        post.publishedId = result.id;
+        if (result.pending) {
+          // Two-stage platforms (TikTok): accepted, not finished — the worker's
+          // status poll completes it. Keep "publishing" + store the publish_id.
+          post.publishedId = result.id;
+        } else {
+          post.status = "posted";
+          post.publishedAt = new Date();
+          post.publishedId = result.id;
+        }
       } catch (e) {
         post.status = "failed";
         post.error = e.message;

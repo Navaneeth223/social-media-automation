@@ -221,6 +221,28 @@ The container-based publish flow via **Instagram API with Instagram Login**: **O
 
 ---
 
+## Phase 5 — TikTok, sandbox-honest
+
+Login Kit OAuth + the **Content Posting API (Direct Post)** with `PULL_FROM_URL`: TikTok pulls the video from its public URL, so the composer just needs a caption and a hosted MP4 (Cloudinary free tier).
+
+- **Connect:** `/app` → TikTok tab → "Connect TikTok" → Login Kit consent → stores the **access token (24h) + refresh token (~1y), both encrypted** — the worker auto-refreshes the short-lived token before any publish.
+- **Two-stage publishing:** the init call returns a `publish_id` while TikTok processes — the post stays `publishing` and the worker polls `/status/fetch` until it lands in your TikTok inbox (`posted`) or fails with TikTok's REAL `fail_reason`.
+- **Sandbox-honest:** until the app passes TikTok's audit, `privacy_level` is **forced to `SELF_ONLY`** (only the uploader can see it). The composer says so; when TikTok approves the app, set `TIKTOK_PRIVACY_LEVEL=PUBLIC_TO_EVERYONE` in `server/.env` — no code change.
+- Restart safety: TikTok posts with a `publish_id` are exempt from the stale-claim rule (the upload already happened — they only poll), so a worker restart can never double-post.
+
+### Make it live with your credentials (10 minutes, free)
+
+1. [developers.tiktok.com](https://developers.tiktok.com) → Manage apps → create an app → add the products **"Login Kit"** and **"Content Posting API"**.
+2. Add the redirect URI: `http://localhost:8787/api/auth/tiktok/callback`.
+3. Copy the **Client Key** and **Client Secret** into `server/.env` (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET`) → restart `npm run dev`.
+4. On `/app`, hit **Connect TikTok** → approve → upload for real (private until audit).
+
+### Phase 5 verification
+
+`cd server && npm run smoke` — 29 checks, adding: TikTok OAuth flow with encrypted access + refresh tokens (TikTok uses `client_key`, not `client_id`), Direct Post init asserting `privacy_level` is **forced to SELF_ONLY**, the two-stage lifecycle (init → `publishing` → status poll → `posted`), and TikTok's REAL `fail_reason` surfaced to the queue.
+
+---
+
 ## Local demo mode — everything on this computer (no cloud, no cost)
 
 ```bash

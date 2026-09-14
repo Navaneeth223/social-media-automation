@@ -49,7 +49,7 @@ export async function processOnce() {
         platform: post.platform,
       }).sort({ connectedAt: -1 });
       if (!account) throw new Error(`${
-        { youtube: "YouTube channel", instagram: "Instagram account", linkedin: "LinkedIn account" }[
+        { youtube: "YouTube channel", instagram: "Instagram account", linkedin: "LinkedIn account", tiktok: "TikTok account" }[
           post.platform
         ] || "Platform account"
       } is no longer connected`);

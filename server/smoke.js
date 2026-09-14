@@ -83,7 +83,15 @@ globalThis.fetch = async (input, init) => {
     );
   }
   if (url.includes("googleapis.com/youtube/v3/channels")) {
-    return json({ items: [{ id: "UC123abc", snippet: { title: "Pulse Demo Channel" } }] });
+    return json({
+      items: [
+        {
+          id: "UC123abc",
+          snippet: { title: "Pulse Demo Channel" },
+          statistics: { subscriberCount: "1337", viewCount: "50000", videoCount: "12" },
+        },
+      ],
+    });
   }
   if (url.includes("uploadType=resumable")) {
     return new Response(null, {
@@ -93,6 +101,35 @@ globalThis.fetch = async (input, init) => {
   }
   if (url.includes("upload/session/smoke-123")) {
     return json({ id: "yt-video-123" }, 200);
+  }
+  /* Phase 6: insights — per-video stats + IG media list. The videos.list
+     discriminator (part=snippet,statistics) can't collide with the resumable
+     init (part=snippet,status) because that stub matches first. */
+  if (url.includes("part=snippet,statistics")) {
+    return json({
+      items: [
+        {
+          id: "yt-video-123",
+          snippet: { title: "One draft, seven feeds" },
+          statistics: { viewCount: "900", likeCount: "88", commentCount: "7" },
+        },
+      ],
+    });
+  }
+  if (url.includes("/media?fields=")) {
+    return json({
+      data: [
+        {
+          id: "ig-media-1",
+          media_type: "IMAGE",
+          permalink: "https://www.instagram.com/p/demo/",
+          timestamp: "2026-09-10T12:00:00Z",
+          caption: "New drop — caption by Pulse",
+          like_count: 42,
+          comments_count: 3,
+        },
+      ],
+    });
   }
   /* The video "file" the upload streams from. */
   if (url === "https://example.com/demo-video.mp4") {
@@ -809,6 +846,57 @@ try {
     } finally {
       tiktokStatus = "SEND_TO_USER_INBOX";
     }
+  });
+
+  await step("Phase 6: YouTube insights flow from the real API (channel + per-video)", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/insights", { headers: { Cookie: cookieOf(login) } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.youtube.available, true, "YouTube analytics are free-tier available");
+    assert.equal(r.data.youtube.channel.title, "Pulse Demo Channel");
+    assert.equal(r.data.youtube.channel.subscribers, 1337);
+    assert.equal(r.data.youtube.channel.views, 50000);
+    const vid = r.data.youtube.posts.find((v) => v.videoId === "yt-video-123");
+    assert.ok(vid, "our published video is listed");
+    assert.equal(vid.views, 900);
+    assert.equal(vid.likes, 88);
+    assert.equal(vid.comments, 7);
+    assert.equal(vid.url, "https://www.youtube.com/watch?v=yt-video-123");
+  });
+
+  await step("Phase 6: Instagram insights expose real likes/comments", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/insights", { headers: { Cookie: cookieOf(login) } });
+    assert.equal(r.data.instagram.available, true);
+    assert.equal(r.data.instagram.username, "loopwear.studio");
+    const m = r.data.instagram.media[0];
+    assert.equal(m.id, "ig-media-1");
+    assert.equal(m.likes, 42);
+    assert.equal(m.comments, 3);
+    assert.ok(m.url.includes("instagram.com/p/"), "permalink exposed");
+  });
+
+  await step("Phase 6: LinkedIn + TikTok honestly omit analytics (no invented numbers)", async () => {
+    const login = await j("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "maya@example.com", password: PASSWORD }),
+    });
+    const r = await j("/api/insights", { headers: { Cookie: cookieOf(login) } });
+    assert.equal(r.data.linkedin.available, false);
+    assert.ok(r.data.linkedin.reason.length > 10, "real reason given");
+    assert.equal(r.data.tiktok.available, false);
+    assert.ok(r.data.tiktok.reason.length > 10, "real reason given");
+    // and absolutely no fabricated engagement fields for them
+    assert.ok(!("views" in r.data.linkedin));
+    assert.ok(!("likes" in r.data.linkedin));
+    assert.ok(!("views" in r.data.tiktok));
+    assert.ok(!("likes" in r.data.tiktok));
   });
 } finally {
   server.close();

@@ -4,9 +4,11 @@ import { useSEO } from "../lib/seo";
 import {
   AtSign,
   CalendarDays,
+  Heart,
   Instagram,
   Linkedin,
   LogOut,
+  MessageCircle,
   Music2,
   Send,
   Timer,
@@ -19,6 +21,7 @@ import {
   deletePost,
   disconnectPlatform,
   getConnections,
+  getInsights,
   getMe,
   getPosts,
   logout,
@@ -66,6 +69,7 @@ export default function Dashboard() {
   const [igType, setIgType] = useState("reel"); // reel (video) | photo (image)
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [insights, setInsights] = useState(null);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -84,6 +88,13 @@ export default function Dashboard() {
       setPosts(p.posts);
     } catch (e) {
       setNotice({ error: e.message });
+    }
+    // Insights load separately — a platform API hiccup must never blank the
+    // rest of the dashboard, and the analytics panel shows the real error.
+    try {
+      setInsights(await getInsights());
+    } catch (e) {
+      setInsights({ error: e.message });
     }
   }, []);
 
@@ -649,6 +660,147 @@ export default function Dashboard() {
           </div>
         </div>
 
+
+        {/* Analytics — real platform API data only (Phase 6) */}
+        <div className="mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-2xl font-semibold">Analytics</h2>
+            <span className="text-xs text-mute">real API data only — nothing invented</span>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {insights?.error && (
+              <div className="rounded-2xl border border-line bg-coal p-5 lg:col-span-2">
+                <p className="text-[13px] text-mute">{insights.error}</p>
+              </div>
+            )}
+
+            {insights?.youtube?.available ? (
+              <div className="rounded-2xl border border-line bg-coal p-5">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-2 font-medium">
+                    <Youtube size={16} className="text-acid" /> YouTube
+                  </p>
+                  <span className="chip border-acid/40 text-acid">live data</span>
+                </div>
+                <p className="mt-3 text-[13px] text-mute">
+                  {insights.youtube.channel.title} ·{" "}
+                  <span className="text-paper">{fmtNum(insights.youtube.channel.subscribers)}</span>{" "}
+                  subscribers ·{" "}
+                  <span className="text-paper">{fmtNum(insights.youtube.channel.views)}</span> total
+                  views · {fmtNum(insights.youtube.channel.videoCount)} videos
+                </p>
+                <div className="mt-4 space-y-2">
+                  {insights.youtube.posts.length === 0 ? (
+                    <p className="text-xs text-mute">No videos uploaded through Pulse yet.</p>
+                  ) : (
+                    insights.youtube.posts.map((v) => (
+                      <a
+                        key={v.videoId}
+                        href={v.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-3 rounded-lg border border-line bg-soot px-3 py-2 text-[13px] transition-colors hover:border-acid/40"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{v.title}</span>
+                        <span className="shrink-0 text-mute">
+                          {fmtNum(v.views)} views · {fmtNum(v.likes)} likes ·{" "}
+                          {fmtNum(v.comments)} comments
+                        </span>
+                      </a>
+                    ))
+                  )}
+                </div>
+                <p className="mt-3 text-[11px] text-mute">
+                  Live from YouTube Data API v3 — 2 quota units per refresh of your 10,000/day.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-line bg-coal p-5">
+                <p className="flex items-center gap-2 font-medium">
+                  <Youtube size={16} className="text-acid" /> YouTube
+                </p>
+                <p className="mt-3 text-[13px] leading-relaxed text-mute">
+                  {insights?.youtube?.reason ||
+                    insights?.youtube?.error ||
+                    "Connect YouTube to see real channel numbers here."}
+                </p>
+              </div>
+            )}
+
+            {insights?.instagram?.available ? (
+              <div className="rounded-2xl border border-line bg-coal p-5">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-2 font-medium">
+                    <Instagram size={16} className="text-acid" /> Instagram
+                  </p>
+                  <span className="chip border-acid/40 text-acid">live data</span>
+                </div>
+                <p className="mt-3 text-[13px] text-mute">
+                  @{insights.instagram.username} — latest media
+                </p>
+                <div className="mt-4 space-y-2">
+                  {insights.instagram.media.length === 0 ? (
+                    <p className="text-xs text-mute">No media found on this account.</p>
+                  ) : (
+                    insights.instagram.media.map((m) => (
+                      <a
+                        key={m.id}
+                        href={m.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-3 rounded-lg border border-line bg-soot px-3 py-2 text-[13px] transition-colors hover:border-acid/40"
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {m.caption || `(${m.type.toLowerCase()})`}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3 text-mute">
+                          <span className="flex items-center gap-1">
+                            <Heart size={12} /> {fmtNum(m.likes)}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <MessageCircle size={12} /> {fmtNum(m.comments)}
+                          </span>
+                        </span>
+                      </a>
+                    ))
+                  )}
+                </div>
+                <p className="mt-3 text-[11px] text-mute">
+                  Live from the Instagram Graph API — likes and comments per media.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-line bg-coal p-5">
+                <p className="flex items-center gap-2 font-medium">
+                  <Instagram size={16} className="text-acid" /> Instagram
+                </p>
+                <p className="mt-3 text-[13px] leading-relaxed text-mute">
+                  {insights?.instagram?.reason ||
+                    insights?.instagram?.error ||
+                    "Connect Instagram to see real likes and comments here."}
+                </p>
+              </div>
+            )}
+
+            {["linkedin", "tiktok"].map((p) =>
+              insights?.[p] ? (
+                <div key={p} className="rounded-2xl border border-line bg-coal p-5">
+                  <p className="flex items-center gap-2 font-medium capitalize">
+                    {p === "linkedin" ? (
+                      <Linkedin size={16} className="text-mute" />
+                    ) : (
+                      <Music2 size={16} className="text-mute" />
+                    )}
+                    {p}
+                  </p>
+                  <p className="mt-3 text-[13px] leading-relaxed text-mute">
+                    {insights[p].reason || insights[p].error}
+                  </p>
+                </div>
+              ) : null
+            )}
+          </div>
+        </div>
 
         {/* Connection matrix — honest about what each platform can do today */}
         <h2 className="mt-12 font-display text-2xl font-semibold">Platform connections</h2>

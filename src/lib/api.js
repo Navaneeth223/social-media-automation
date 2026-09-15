@@ -40,3 +40,4 @@ export const createPost = (payload) => api("/api/posts", { method: "POST", body:
 export const deletePost = (id) => api(`/api/posts/${id}`, { method: "DELETE" });
 export const disconnectPlatform = (platform) =>
   api(`/api/connections/${platform}`, { method: "DELETE" });
+export const getInsights = () => api("/api/insights");

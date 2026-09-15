@@ -243,6 +243,19 @@ Login Kit OAuth + the **Content Posting API (Direct Post)** with `PULL_FROM_URL`
 
 ---
 
+## Phase 6 — dashboard truth
+
+The Analytics panel on `/app` is powered by an aggregator (`GET /api/insights`, `server/src/services/insights.js`) that pulls **only real platform API data**, per connected platform:
+
+- **YouTube (live):** `channels.list?mine=true` → subscribers / total views / video count, plus `videos.list` for the videos **Pulse actually published** (views, likes, comments, deep links). Costs ~2 quota units per dashboard refresh of the 10,000/day free allowance (displayed in the UI).
+- **Instagram (live):** `/{ig-user-id}/media` → per-media likes, comments, permalinks for the 12 most recent items.
+- **LinkedIn + TikTok (omitted):** their free tiers don't expose member/creator analytics — the dashboard shows an explicit "not available on this free tier" card with the reason **instead of invented numbers**.
+- **Failures are real too:** if a platform API errors, the panel shows that platform's actual error message.
+
+The frontend (`Analytics` section on `/app`) refreshes with the queue poll and renders three states per platform: live data · connect hint · real error.
+
+---
+
 ## Local demo mode — everything on this computer (no cloud, no cost)
 
 ```bash

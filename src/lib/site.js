@@ -12,5 +12,10 @@ export const SITE_URL = (
 
 export const SITE_NAME = "Pulse";
 
+// CHANGE THIS to an inbox you actually monitor — it appears on /privacy and
+// /data-deletion and is the contact address Meta/TikTok reviewers may use.
+export const SUPPORT_EMAIL =
+  import.meta.env.VITE_SUPPORT_EMAIL || "support@pulse.app";
+
 export const absoluteUrl = (path = "/") =>
   `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;

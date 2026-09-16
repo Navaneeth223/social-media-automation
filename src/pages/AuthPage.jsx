@@ -24,6 +24,7 @@ export default function AuthPage({ mode }) {
   const plan = PLANS[params.get("plan")?.toLowerCase()] || null;
 
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [agree, setAgree] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -132,6 +133,37 @@ export default function AuthPage({ mode }) {
                   placeholder={isSignup ? "8+ characters" : "••••••••"}
                 />
               </Field>
+
+              {isSignup && (
+                <label className="flex items-start gap-3 text-xs leading-relaxed text-mute">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={agree}
+                    onChange={(e) => setAgree(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#d7ff3c]"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <Link
+                      to="/terms"
+                      target="_blank"
+                      className="text-paper underline decoration-line underline-offset-4 hover:decoration-acid"
+                    >
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link
+                      to="/privacy"
+                      target="_blank"
+                      className="text-paper underline decoration-line underline-offset-4 hover:decoration-acid"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
+                </label>
+              )}
 
               {error && (
                 <p className="rounded-lg border-l-2 border-acid bg-soot px-4 py-3 text-sm">{error}</p>

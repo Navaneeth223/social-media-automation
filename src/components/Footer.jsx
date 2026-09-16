@@ -17,6 +17,14 @@ const COLS = [
       { label: "Log in", href: "/login" },
     ],
   },
+  {
+    title: "Legal",
+    links: [
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms of Service", href: "/terms" },
+      { label: "Data deletion", href: "/data-deletion" },
+    ],
+  },
 ];
 
 // Social profile links are intentionally omitted until real accounts exist.
@@ -35,7 +43,7 @@ export default function Footer() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-10 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
           {COLS.map((c) => (
             <div key={c.title}>
               <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-mute">
